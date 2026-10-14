@@ -34,11 +34,12 @@ uv pip install --python .venv/bin/python \
   torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
   --index-url https://download.pytorch.org/whl/cu128
 uv pip install --python .venv/bin/python -r requirements-ml.txt
+uv pip install --python .venv/bin/python -r requirements-api.txt
 ```
 
 `.venv/` and the Hugging Face weight cache are gitignored. Weights download on the first smoke test into the default Hugging Face cache (`~/.cache/huggingface`), which is outside this repo.
 
-## Smoke test
+## Smoke test (standalone detector)
 
 Supply a real local image. The script does not download or fabricate one.
 
@@ -57,6 +58,109 @@ Exit codes:
 | 1 | Import, weight download, config mismatch, or inference failed. The candidate was not replaced. |
 
 JSON includes Python, torch, transformers, `cuda_available`, `gpu_name`, model id, loaded config, input width/height, raw logit, sigmoid fake probability, device actually used, and duration. `accuracy_claim` is always `null`.
+
+## Start the API server
+
+```bash
+.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+Or with reload for development:
+
+```bash
+.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/health` | Service health and detector status |
+| POST | `/api/scans` | Upload image for AI detection (multipart/form-data) |
+| GET | `/api/scans` | Scan history (not implemented - requires DB) |
+| GET | `/api/scans/{id}` | Get scan by ID (not implemented - requires DB) |
+
+### POST `/api/scans` Request
+
+- Multipart form field: `file`
+- Allowed formats: JPEG, PNG, WEBP (validated by decode, not extension)
+- Max size: 15 MiB
+- Max dimensions: 8192 px per side
+
+### POST `/api/scans` Response (201 Created)
+
+```json
+{
+  "scan_id": "uuid",
+  "status": "complete|failed",
+  "result": {
+    "scan_id": "uuid",
+    "created_at": "ISO8601",
+    "status": "complete|failed",
+    "input": {
+      "sha256": "hex",
+      "filename": "original.jpg",
+      "media_type": "image/jpeg",
+      "byte_size": 12345,
+      "width": 512,
+      "height": 512
+    },
+    "models": [
+      {
+        "model_id": "buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        "model_revision": "...",
+        "role": "primary",
+        "status": "ok|error",
+        "fake_probability": 0.0044,
+        "raw_logit": -5.42,
+        "threshold_policy": "0.80 likely_ai / 0.20 likely_real",
+        "limitations": ["Not calibrated on images from this deployment", "..."],
+        "device": "cuda|cpu",
+        "duration_seconds": 0.19
+      }
+    ],
+    "indicators": [],
+    "explainability": {"status": "unavailable", "kind": null, "artifact": null},
+    "verdict": {
+      "label": "LIKELY_AI|LIKELY_REAL|INCONCLUSIVE|ANALYSIS_FAILED",
+      "risk": "low|moderate|high|unknown",
+      "rationale": ["Primary fake probability 0.0044 <= 0.2"],
+      "not_claimed": ["generator identity", "legal authenticity", "..."]
+    },
+    "error": null
+  }
+}
+```
+
+### Verdict Policy (Provisional Screening Thresholds)
+
+| Fake Probability | Verdict | Risk |
+|---|---|---|
+| `>= 0.80` | `LIKELY_AI` | `high` |
+| `<= 0.20` | `LIKELY_REAL` | `low` |
+| `0.20 - 0.80` | `INCONCLUSIVE` | `moderate` |
+| Detector error / no score | `ANALYSIS_FAILED` | `unknown` |
+
+**These are provisional screening thresholds, not calibrated forensic certainty.**  
+Detector errors never produce `LIKELY_REAL`. Missing metadata is not evidence of generation.
+
+### Model Limitations
+
+- Single model (CommunityForensics ViT-Small), not an ensemble
+- Training data: 4,803 generators, but may not cover newest commercial models (Flux, Midjourney v7, etc.)
+- Benchmark mean accuracy ~75%, but drops to ~35-42% on newest commercial generators
+- No localization - output is image-level only
+- No generator attribution
+
+## Run Tests
+
+```bash
+# Unit tests (mocked detector, no GPU/model download)
+.venv/bin/python -m pytest tests/ -v
+
+# Real model smoke test (downloads ~83 MB weights, requires GPU or CPU)
+RUN_REAL_MODEL=1 .venv/bin/python -m pytest tests/test_real_model_smoke.py -v
+```
 
 ## If CUDA fails
 

@@ -13,4 +13,19 @@ models/
 
 # Local evidence and generated artifacts
 data/
+uploads/
 *.log
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+# PHANTOM PHOENIX API dependencies
+# Install into the same .venv as the ML environment
+
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.34.0,<0.35.0
+python-multipart>=0.0.9,<0.1.0
+pydantic>=2.10.0,<3.0.0
+pydantic-settings>=2.7.0,<3.0.0
+httpx>=0.28.0,<1.0.0
+pytest>=8.3.0,<9.0.0
+pytest-asyncio>=0.24.0,<1.0.0
+pytest-mock>=3.14.0,<4.0.0
