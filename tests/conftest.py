@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import io
 from typing import Generator
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.database import get_session
 from backend.detector import DetectorAdapter
 from backend.main import app, get_detector_dependency
+from backend.models import Scan
 from backend.schemas import ModelOutput, VerdictLabel, RiskLevel
 
 
@@ -19,6 +22,31 @@ from backend.schemas import ModelOutput, VerdictLabel, RiskLevel
 def client() -> TestClient:
     """FastAPI test client."""
     return TestClient(app)
+
+
+@pytest.fixture
+def mock_db_session() -> AsyncMock:
+    """Create a mocked async database session."""
+    session = AsyncMock(spec=AsyncSession)
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.close = AsyncMock()
+    session.flush = AsyncMock()
+    session.refresh = AsyncMock()
+    session.execute = AsyncMock()
+    session.add = MagicMock()
+    return session
+
+
+@pytest.fixture(autouse=True)
+def override_db_session_for_unit_tests(request, mock_db_session: AsyncMock) -> Generator[None, None, None]:
+    """Override database session for non-database integration tests."""
+    if "test_database.py" not in str(request.path):
+        app.dependency_overrides[get_session] = lambda: mock_db_session
+        yield
+        app.dependency_overrides.pop(get_session, None)
+    else:
+        yield
 
 
 @pytest.fixture
@@ -56,7 +84,7 @@ def mock_detector(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     yield mock
 
     # Cleanup
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_detector_dependency, None)
 
 
 @pytest.fixture
@@ -90,7 +118,7 @@ def mock_detector_high_score(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
     yield mock
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_detector_dependency, None)
 
 
 @pytest.fixture
@@ -124,7 +152,7 @@ def mock_detector_mid_score(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
     yield mock
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_detector_dependency, None)
 
 
 @pytest.fixture
@@ -149,7 +177,7 @@ def mock_detector_error(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
     yield mock
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_detector_dependency, None)
 
 
 def create_test_image(

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     reload: bool = False
     workers: int = 1
 
+    # Database
+    database_url: str = "postgresql+asyncpg://phantom:phantom@localhost:5432/phantom_phoenix"
+    database_echo: bool = False
+
     # Model
     model_id: str = "buildborderless/CommunityForensics-DeepfakeDet-ViT"
     device: str = "auto"  # auto, cuda, cpu

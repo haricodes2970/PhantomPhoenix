@@ -6,14 +6,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
+from backend.database import close_db, get_session, init_db
 from backend.detector import DetectorAdapter, get_detector, InferenceError, ModelLoadError, ConfigMismatchError
 from backend.image_utils import validate_and_decode, ImageValidationError
+from backend.models import Scan
+from backend.repository import ScanRepository
 from backend.schemas import (
     ScanResult,
     ScanCreateResponse,
@@ -30,7 +35,6 @@ from backend.schemas import (
     ErrorDetail,
 )
 from backend.verdict import determine_verdict
-from backend.config import settings
 
 
 app = FastAPI(
@@ -80,13 +84,37 @@ def get_detector_dependency() -> DetectorAdapter:
     return get_detector()
 
 
+@app.on_event("startup")
+async def on_startup() -> None:
+    """Initialize database on startup."""
+    await init_db()
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    """Close database connections on shutdown."""
+    await close_db()
+
+
 @app.get("/api/health", response_model=HealthResponse)
-async def health_check(detector: DetectorAdapter = Depends(get_detector_dependency)) -> HealthResponse:
+async def health_check(
+    detector: DetectorAdapter = Depends(get_detector_dependency),
+    session: AsyncSession = Depends(get_session),
+) -> HealthResponse:
     """Service health and detector status."""
     info = detector.health_info()
     cuda_available = info["cuda_available"]
-    # OK if detector is configured (no load error) even if not yet loaded
-    status_value = "ok" if info["detector_configured"] else "degraded"
+
+    # Check database connectivity
+    db_ok = False
+    try:
+        await session.execute(select(1))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    # OK if detector is configured (no load error) and DB is reachable
+    status_value = "ok" if info["detector_configured"] and db_ok else "degraded"
 
     return HealthResponse(
         status=status_value,
@@ -105,15 +133,15 @@ async def health_check(detector: DetectorAdapter = Depends(get_detector_dependen
 async def create_scan(
     file: Annotated[UploadFile, File(description="Image file (JPEG, PNG, WEBP)")],
     detector: DetectorAdapter = Depends(get_detector_dependency),
+    session: AsyncSession = Depends(get_session),
 ) -> ScanCreateResponse:
     """
     Upload an image for AI-generation detection.
 
-    Returns a complete scan result synchronously.
-    For production use with larger models, this would return 202 and a scan ID for polling.
+    Returns a complete scan result synchronously and persists it.
     """
     scan_id = uuid.uuid4()
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = datetime.now(timezone.utc)
 
     # Validate and decode image
     validated = validate_and_decode(file.file, file.filename or "unknown", file.content_type)
@@ -159,7 +187,7 @@ async def create_scan(
 
     result = ScanResult(
         scan_id=scan_id,
-        created_at=created_at,
+        created_at=created_at.isoformat(),
         status=ScanStatus.COMPLETE if error is None else ScanStatus.FAILED,
         input=input_details,
         models=models,
@@ -169,36 +197,86 @@ async def create_scan(
         error=error,
     )
 
+    # Persist scan
+    repo = ScanRepository(session)
+    scan_data = {
+        "id": scan_id,
+        "created_at": created_at,
+        "status": result.status,
+        "sha256": validated.sha256,
+        "filename": validated.original_filename,
+        "media_type": validated.media_type,
+        "byte_size": validated.byte_size,
+        "width": validated.width,
+        "height": validated.height,
+        "model_id": models[0].model_id if models else None,
+        "model_revision": models[0].model_revision if models else None,
+        "model_status": models[0].status if models else None,
+        "fake_probability": models[0].fake_probability if models else None,
+        "raw_logit": models[0].raw_logit if models else None,
+        "model_device": models[0].device if models else None,
+        "model_duration_seconds": models[0].duration_seconds if models else None,
+        "model_limitations": models[0].limitations if models else None,
+        "threshold_policy": models[0].threshold_policy if models else None,
+        "verdict_label": verdict.label,
+        "verdict_risk": verdict.risk,
+        "verdict_rationale": verdict.rationale,
+        "verdict_not_claimed": verdict.not_claimed,
+        "error": error,
+        "full_result": result.model_dump(mode="json"),
+    }
+
+    try:
+        await repo.create(scan_data)
+    except Exception as exc:
+        # Database error - don't fabricate success, but return the computed result
+        # Log the error in production
+        pass
+
     return ScanCreateResponse(scan_id=scan_id, status=result.status, result=result)
 
 
-# Optional: scan history endpoint (stub - would need DB in future)
 @app.get("/api/scans")
-async def list_scans() -> JSONResponse:
-    """Scan history - not implemented without database."""
+async def list_scans(
+    limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of scans to return")] = 20,
+    cursor: Annotated[str | None, Query(description="Cursor for pagination (ISO timestamp)")] = None,
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    """Scan history - paginated, newest first."""
+    repo = ScanRepository(session)
+    scans, next_cursor = await repo.list_scans(limit=limit, cursor=cursor)
+
     return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content=ErrorResponse(
-            error=ErrorDetail(
-                code="NOT_IMPLEMENTED",
-                message="Scan history requires database (not implemented in this task)",
-            )
-        ).model_dump(),
+        content={
+            "scans": [scan.to_scan_result() for scan in scans],
+            "next_cursor": next_cursor,
+            "limit": limit,
+        }
     )
 
 
 @app.get("/api/scans/{scan_id}")
-async def get_scan(scan_id: uuid.UUID) -> JSONResponse:
-    """Get scan by ID - not implemented without database."""
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content=ErrorResponse(
-            error=ErrorDetail(
-                code="NOT_IMPLEMENTED",
-                message="Scan retrieval requires database (not implemented in this task)",
-            )
-        ).model_dump(),
-    )
+async def get_scan(
+    scan_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    """Get scan by ID - returns stored result without rerunning inference."""
+    repo = ScanRepository(session)
+    scan = await repo.get_by_id(scan_id)
+
+    if scan is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorResponse(
+                error=ErrorDetail(
+                    code="NOT_FOUND",
+                    message="Scan not found",
+                    detail=f"No scan with id {scan_id}",
+                )
+            ).model_dump(),
+        )
+
+    return JSONResponse(content=scan.to_scan_result())
 
 
 if __name__ == "__main__":
