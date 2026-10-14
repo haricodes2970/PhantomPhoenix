@@ -35,6 +35,7 @@ from backend.schemas import (
     ErrorDetail,
 )
 from backend.verdict import determine_verdict
+from backend.forensics.runner import run_all_analyzers
 
 
 app = FastAPI(
@@ -179,8 +180,8 @@ async def create_scan(
     # Determine verdict
     verdict = determine_verdict(models, settings.likely_ai_threshold, settings.likely_real_threshold)
 
-    # Placeholder indicators (future: EXIF, ELA, noise, C2PA)
-    indicators: list[Indicator] = []
+    # Run forensic analyzers (metadata, ELA, noise, frequency)
+    indicators = run_all_analyzers(validated, scan_id)
 
     # Placeholder explainability (future: saliency heatmap)
     explainability = Explainability()

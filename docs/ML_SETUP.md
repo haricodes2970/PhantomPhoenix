@@ -119,7 +119,59 @@ Or with reload for development:
         "duration_seconds": 0.19
       }
     ],
-    "indicators": [],
+    "indicators": [
+      {
+        "id": "metadata",
+        "method": "computed",
+        "status": "ok",
+        "value": {
+          "result": {"format": "JPEG", "width": 512, "height": 512, "has_exif": false, ...},
+          "evidence_category": "computed",
+          "limitations": ["Absence of EXIF is common in web images..."],
+          "error": null
+        },
+        "note": "Image format is JPEG (512x512, mode RGB). EXIF metadata is absent."
+      },
+      {
+        "id": "ela",
+        "method": "computed",
+        "status": "ok",
+        "value": {
+          "result": {"mean_difference": 1.23, "max_difference": 45.0, "std_difference": 3.45},
+          "evidence_category": "computed",
+          "limitations": ["ELA is a heuristic visualization tool..."],
+          "error": null
+        },
+        "note": "ELA mean difference is 1.23 (std 3.45). ...",
+        "artifact": "uploads/artifacts/scan_id/ela.jpg"
+      },
+      {
+        "id": "noise",
+        "method": "heuristic",
+        "status": "ok",
+        "value": {
+          "result": {"noise_std": 8.9, "noise_mean": -0.1, "noise_max": 42.3},
+          "evidence_category": "heuristic",
+          "limitations": ["Noise residuals are heuristic estimates..."],
+          "error": null
+        },
+        "note": "Noise standard deviation is 8.90 (mean -0.10). ...",
+        "artifact": "uploads/artifacts/scan_id/noise.jpg"
+      },
+      {
+        "id": "frequency",
+        "method": "computed",
+        "status": "ok",
+        "value": {
+          "result": {"mean_magnitude": 24.5, "std_magnitude": 8.2, "max_magnitude": 65.3},
+          "evidence_category": "computed",
+          "limitations": ["Frequency domain analysis reveals spectral energy..."],
+          "error": null
+        },
+        "note": "Frequency spectrum mean log-magnitude is 24.50 (std 8.20). ...",
+        "artifact": "uploads/artifacts/scan_id/fft.jpg"
+      }
+    ],
     "explainability": {"status": "unavailable", "kind": null, "artifact": null},
     "verdict": {
       "label": "LIKELY_AI|LIKELY_REAL|INCONCLUSIVE|ANALYSIS_FAILED",
@@ -152,7 +204,71 @@ Detector errors never produce `LIKELY_REAL`. Missing metadata is not evidence of
 - No localization - output is image-level only
 - No generator attribution
 
-## Database Setup
+## Forensic Engine
+
+The `/api/scans` endpoint runs four modular forensic analyzers alongside AI detection. Each analyzer produces a structured `Indicator` with computed result, interpretation, evidence category, limitations, and (where applicable) a visual artifact stored under `uploads/artifacts/{scan_id}/`.
+
+### Implemented Analyzers
+
+| ID | Name | Method | Evidence Category | Output Artifact |
+|----|------|--------|-------------------|-----------------|
+| `metadata` | Metadata Extraction | `computed` | `computed` | — |
+| `ela` | Error Level Analysis (JPEG recompression at quality 90) | `computed` | `computed` | `ela.jpg` |
+| `noise` | Noise Residual Statistics & Heatmap | `heuristic` | `heuristic` | `noise.jpg` |
+| `frequency` | 2D FFT Magnitude Spectrum | `computed` | `computed` | `fft.jpg` |
+
+### Analyzer Details
+
+**Metadata Analyzer**
+- Extracts format, dimensions, color mode, EXIF tags (if present), software, and timestamps
+- Reports `has_exif`, `exif_tags_count`, software, datetime
+- **Limitations**: Absence of EXIF is common and is NOT evidence of manipulation; metadata is easily stripped or forged
+
+**Error Level Analysis (ELA)**
+- Recompresses image as JPEG (quality 90) and computes absolute pixel-wise difference
+- Scales difference for visualization; computes mean/max/std of difference
+- **Limitations**: ELA is a heuristic; high-frequency textures naturally produce higher residuals; cannot independently prove forgery
+
+**Noise Residual Analyzer**
+- Estimates high-pass noise residuals via median filter subtraction
+- Computes mean, standard deviation, max of noise residuals
+- Generates noise heatmap artifact
+- **Limitations**: Heuristic; influenced by texture, lighting, compression; not proof of editing
+
+**Frequency Spectrum Analyzer**
+- Computes 2D FFT magnitude spectrum (log scale), shifted to center
+- Computes mean/std/max of log-magnitude spectrum
+- Generates log-magnitude visualization artifact
+- **Limitations**: Cannot identify specific generators; periodic patterns can arise from legitimate sources
+
+### Analyzer Output Schema
+
+Each indicator follows the schema:
+
+```json
+{
+  "id": "metadata|ela|noise|frequency",
+  "method": "computed|heuristic",
+  "status": "ok|error|not_applicable",
+  "value": {
+    "result": { ... },
+    "evidence_category": "computed|heuristic|verified|model_inference|unknown",
+    "limitations": ["..."],
+    "error": null
+  },
+  "note": "Human-readable interpretation string",
+  "artifact": "uploads/artifacts/scan_id/ela.jpg"
+}
+```
+
+### Forensic Limitations
+
+- **No single analyzer proves authenticity or forgery** — each provides observational evidence
+- **Absence of anomalies does not imply authenticity** — sophisticated forgeries may leave no detectable traces
+- **Artifacts are visual aids only** — not calibrated quantitative evidence
+- **ELA, noise, and frequency analyses are heuristic** — labeled as such in `method` and `evidence_category`
+
+### Database Setup
 
 ### Start PostgreSQL
 
@@ -245,7 +361,59 @@ Or with reload for development:
         "duration_seconds": 0.19
       }
     ],
-    "indicators": [],
+    "indicators": [
+      {
+        "id": "metadata",
+        "method": "computed",
+        "status": "ok",
+        "value": {
+          "result": {"format": "JPEG", "width": 512, "height": 512, "has_exif": false, ...},
+          "evidence_category": "computed",
+          "limitations": ["Absence of EXIF is common in web images..."],
+          "error": null
+        },
+        "note": "Image format is JPEG (512x512, mode RGB). EXIF metadata is absent."
+      },
+      {
+        "id": "ela",
+        "method": "computed",
+        "status": "ok",
+        "value": {
+          "result": {"mean_difference": 1.23, "max_difference": 45.0, "std_difference": 3.45},
+          "evidence_category": "computed",
+          "limitations": ["ELA is a heuristic visualization tool..."],
+          "error": null
+        },
+        "note": "ELA mean difference is 1.23 (std 3.45). ...",
+        "artifact": "uploads/artifacts/scan_id/ela.jpg"
+      },
+      {
+        "id": "noise",
+        "method": "heuristic",
+        "status": "ok",
+        "value": {
+          "result": {"noise_std": 8.9, "noise_mean": -0.1, "noise_max": 42.3},
+          "evidence_category": "heuristic",
+          "limitations": ["Noise residuals are heuristic estimates..."],
+          "error": null
+        },
+        "note": "Noise standard deviation is 8.90 (mean -0.10). ...",
+        "artifact": "uploads/artifacts/scan_id/noise.jpg"
+      },
+      {
+        "id": "frequency",
+        "method": "computed",
+        "status": "ok",
+        "value": {
+          "result": {"mean_magnitude": 24.5, "std_magnitude": 8.2, "max_magnitude": 65.3},
+          "evidence_category": "computed",
+          "limitations": ["Frequency domain analysis reveals spectral energy..."],
+          "error": null
+        },
+        "note": "Frequency spectrum mean log-magnitude is 24.50 (std 8.20). ...",
+        "artifact": "uploads/artifacts/scan_id/fft.jpg"
+      }
+    ],
     "explainability": {"status": "unavailable", "kind": null, "artifact": null},
     "verdict": {
       "label": "LIKELY_AI|LIKELY_REAL|INCONCLUSIVE|ANALYSIS_FAILED",
@@ -294,7 +462,8 @@ RUN_DB_TESTS=1 .venv/bin/python -m pytest tests/test_database.py -v
 ### Test Notes
 
 - **Unit tests**: 28 tests passing, mocked detector, no GPU/download required
-- **Real model smoke test**: Passes on RTX 3050 (4GB), CUDA inference ~190ms
+- **Forensic tests**: 6 tests passing (metadata, ELA, noise, frequency, runner integration)
+- **Real model smoke test**: Passes on RTX 3050 (4GB), CUDA inference ~190ms + forensics ~150ms
 - **Database integration tests**: Some flakiness due to async event loop/connection pool interactions; core functionality verified manually. See `tests/test_database.py` for details.
 
 ## If CUDA fails

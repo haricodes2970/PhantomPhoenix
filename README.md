@@ -52,9 +52,9 @@ docker compose up -d
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Service health and detector status |
-| POST | `/api/scans` | Upload image for AI detection (multipart/form-data) |
+| POST | `/api/scans` | Upload image for AI detection & forensics (multipart/form-data) |
 | GET | `/api/scans` | Paginated scan history |
-| GET | `/api/scans/{id}` | Retrieve stored scan result |
+| GET | `/api/scans/{id}` | Retrieve stored scan result & forensic indicators |
 
 ### Example Usage
 
@@ -62,7 +62,7 @@ docker compose up -d
 # Health check
 curl http://localhost:8000/api/health
 
-# Analyze image
+# Analyze image (runs AI detection + metadata, ELA, noise, frequency analyzers)
 curl -X POST http://localhost:8000/api/scans \
   -F "file=@/path/to/image.jpg"
 
@@ -73,7 +73,7 @@ curl "http://localhost:8000/api/scans?limit=10"
 ### Run Tests
 
 ```bash
-# Unit tests (mocked detector, no GPU required)
+# Unit tests (mocked detector, forensics engine, no GPU required)
 .venv/bin/python -m pytest tests/ -v -k "not test_database"
 
 # Real model smoke test (downloads ~83 MB weights, requires GPU or CPU)
@@ -92,8 +92,8 @@ RUN_DB_TESTS=1 .venv/bin/python -m pytest tests/test_database.py -v
 └─────────────┘     └──────┬──────┘     └──────┬──────┘
                            │                   │
                     ┌──────▼──────┐     ┌──────▼──────┐
-                    │ PostgreSQL  │     │  HF Model   │
-                    │  (Scans)    │     │  (Weights)  │
+                    │ PostgreSQL  │     │  Forensics  │
+                    │  (Scans)    │     │  Analyzers  │
                     └─────────────┘     └─────────────┘
 ```
 
@@ -101,8 +101,16 @@ RUN_DB_TESTS=1 .venv/bin/python -m pytest tests/test_database.py -v
 
 - **FastAPI Backend**: REST API with validated upload, health checks, scan persistence
 - **Detector Adapter**: Singleton wrapper for CommunityForensics ViT-Small model with CUDA/CPU fallback
+- **Forensics Engine**: Modular analyzers (Metadata, Error Level Analysis, Noise Residual, Frequency Spectrum) producing structured indicators and visual artifacts (`ela.jpg`, `noise.jpg`, `fft.jpg`)
 - **PostgreSQL**: Persistent storage for scan history and results (JSONB)
 - **SQLAlchemy + Alembic**: ORM and migrations
+
+## Forensic Analyzers
+
+1. **Metadata Analyzer (`metadata`)**: Extracts image format, dimensions, color mode, EXIF tags, software, and timestamps.
+2. **Error Level Analysis (`ela`)**: Recompresses image as JPEG (quality 90) and compares residuals to highlight compression inconsistencies.
+3. **Noise Residual Analyzer (`noise`)**: Estimates high-pass noise residuals and computes spatial noise variance statistics.
+4. **Frequency Spectrum Analyzer (`frequency`)**: Computes 2D Fast Fourier Transform (FFT) magnitude spectrum and spectral statistics.
 
 ## Model Limitations
 
@@ -131,6 +139,7 @@ Detector errors never produce `LIKELY_REAL`. Missing metadata is not evidence of
 - Max 15 MiB, 8192 px per side
 - SHA-256 content addressing
 - UUID scan IDs (no client filenames on disk)
+- Controlled local artifact storage (`uploads/artifacts/{scan_id}/`)
 - CORS restricted to dev origins
 - No secrets in repository (use `.env`)
 
