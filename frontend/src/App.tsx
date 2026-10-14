@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import type { ScanResult, ScanItem, VerdictLabel, RiskLevel } from './types';
 
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000';
+
 function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -24,7 +26,7 @@ function App() {
   const loadHistory = async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/scans?limit=20');
+      const res = await fetch(`${API_BASE}/api/scans?limit=20`);
       if (res.ok) {
         const data = await res.json();
         setHistory(data.scans || []);
@@ -61,7 +63,7 @@ function App() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://localhost:8000/api/scans', {
+      const res = await fetch(`${API_BASE}/api/scans`, {
         method: 'POST',
         body: formData,
       });
@@ -84,7 +86,7 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`http://localhost:8000/api/scans/${scanId}`);
+      const res = await fetch(`${API_BASE}/api/scans/${scanId}`);
       if (res.ok) {
         const data = await res.json();
         setCurrentScan(data);
@@ -101,90 +103,84 @@ function App() {
   const getVerdictBadge = (label: VerdictLabel) => {
     switch (label) {
       case 'LIKELY_AI':
-        return <span className="px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-xs font-semibold flex items-center gap-1.5"><AlertTriangle size={14}/> LIKELY AI-GENERATED</span>;
+        return <span className="px-2.5 py-1 bg-white text-black border border-white rounded text-xs font-mono font-bold flex items-center gap-1.5"><AlertTriangle size={13}/> LIKELY AI-GENERATED</span>;
       case 'LIKELY_REAL':
-        return <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-semibold flex items-center gap-1.5"><CheckCircle2 size={14}/> LIKELY AUTHENTIC</span>;
+        return <span className="px-2.5 py-1 bg-black text-white border border-white rounded text-xs font-mono font-bold flex items-center gap-1.5"><CheckCircle2 size={13}/> LIKELY AUTHENTIC</span>;
       case 'INCONCLUSIVE':
-        return <span className="px-3 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full text-xs font-semibold flex items-center gap-1.5"><HelpCircle size={14}/> INCONCLUSIVE</span>;
+        return <span className="px-2.5 py-1 bg-neutral-800 text-neutral-200 border border-neutral-600 rounded text-xs font-mono font-bold flex items-center gap-1.5"><HelpCircle size={13}/> INCONCLUSIVE</span>;
       default:
-        return <span className="px-3 py-1 bg-slate-700/50 text-slate-300 border border-slate-600 rounded-full text-xs font-semibold">ANALYSIS FAILED</span>;
+        return <span className="px-2.5 py-1 bg-neutral-900 text-neutral-400 border border-neutral-700 rounded text-xs font-mono font-bold">ANALYSIS FAILED</span>;
     }
   };
 
   const getRiskBadge = (risk: RiskLevel) => {
-    const colors: Record<RiskLevel, string> = {
-      low: 'text-emerald-400 bg-emerald-950/40 border-emerald-800/50',
-      moderate: 'text-amber-400 bg-amber-950/40 border-amber-800/50',
-      high: 'text-red-400 bg-red-950/40 border-red-800/50',
-      unknown: 'text-slate-400 bg-slate-900 border-slate-700',
-    };
-    return <span className={`px-2.5 py-1 rounded text-xs uppercase font-mono border ${colors[risk]}`}>Risk: {risk}</span>;
+    return <span className="px-2 py-0.5 rounded text-xs uppercase font-mono border border-neutral-700 bg-neutral-900 text-neutral-300">Risk: {risk}</span>;
   };
 
   const formatArtifactUrl = (artifactPath?: string | null) => {
     if (!artifactPath) return null;
     const parts = artifactPath.split('artifacts/');
     if (parts.length > 1) {
-      return `http://localhost:8000/api/artifacts/${parts[1]}`;
+      return `${API_BASE}/api/artifacts/${parts[1]}`;
     }
-    return `http://localhost:8000/api/artifacts/${artifactPath}`;
+    return `${API_BASE}/api/artifacts/${artifactPath}`;
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-black text-white flex flex-col font-sans selection:bg-white selection:text-black">
       {/* Top Navbar */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-neutral-800 bg-black sticky top-0 z-50 px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400">
-            <Shield size={24} />
+          <div className="p-2 border border-white text-white">
+            <Shield size={20} />
           </div>
           <div>
-            <h1 className="font-bold tracking-wider text-lg text-slate-100">PHANTOM PHOENIX</h1>
-            <p className="text-xs text-slate-400">Digital Media Authenticity & Forensic Intelligence</p>
+            <h1 className="font-mono font-bold tracking-widest text-sm uppercase text-white">PHANTOM PHOENIX</h1>
+            <p className="text-[10px] text-neutral-400 font-mono tracking-wider">DIGITAL MEDIA FORENSICS & AUTHENTICITY</p>
           </div>
         </div>
-        <nav className="flex items-center gap-2">
+        <nav className="flex items-center gap-3">
           <button 
             onClick={() => { setActiveTab('upload'); setCurrentScan(null); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'upload' && !currentScan ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            className={`px-4 py-2 rounded text-xs font-mono uppercase tracking-wider transition ${activeTab === 'upload' && !currentScan ? 'bg-white text-black font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
           >
             New Scan
           </button>
           <button 
             onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'history' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            className={`px-4 py-2 rounded text-xs font-mono uppercase tracking-wider transition flex items-center gap-2 ${activeTab === 'history' ? 'bg-white text-black font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
           >
-            <History size={16} /> Scan History
+            <History size={14} /> Scan Archive
           </button>
         </nav>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-8 flex flex-col">
         {activeTab === 'history' && !currentScan && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center border-b border-neutral-800 pb-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-100">Scan Archive</h2>
-                <p className="text-sm text-slate-400">Previously analyzed images persisted in PostgreSQL</p>
+                <h2 className="text-xl font-mono uppercase tracking-wider text-white">Scan Archive</h2>
+                <p className="text-xs text-neutral-400 font-mono mt-1">Persisted forensic inspection records</p>
               </div>
               <button 
                 onClick={loadHistory} 
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs flex items-center gap-1.5 transition"
+                className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700 rounded text-xs font-mono flex items-center gap-1.5 transition"
               >
                 <RefreshCw size={12} className={historyLoading ? "animate-spin" : ""} /> Refresh
               </button>
             </div>
 
             {historyLoading && history.length === 0 ? (
-              <div className="py-20 text-center text-slate-500">Loading scan history...</div>
+              <div className="py-20 text-center text-neutral-500 font-mono text-xs">Loading records...</div>
             ) : history.length === 0 ? (
-              <div className="py-20 text-center border border-dashed border-slate-800 rounded-xl">
-                <History size={40} className="mx-auto text-slate-600 mb-3" />
-                <p className="text-slate-400">No scans recorded yet.</p>
+              <div className="py-20 text-center border border-dashed border-neutral-800 rounded">
+                <History size={32} className="mx-auto text-neutral-600 mb-3" />
+                <p className="text-neutral-400 font-mono text-xs">No scan records found.</p>
                 <button 
                   onClick={() => setActiveTab('upload')} 
-                  className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition"
+                  className="mt-4 px-4 py-2 bg-white text-black font-mono text-xs uppercase font-bold rounded transition"
                 >
                   Upload Image
                 </button>
@@ -195,19 +191,19 @@ function App() {
                   <div 
                     key={item.scan_id}
                     onClick={() => fetchScanById(item.scan_id)}
-                    className="p-4 bg-slate-900/60 border border-slate-800 hover:border-slate-700 rounded-xl flex items-center justify-between cursor-pointer transition group"
+                    className="p-4 bg-neutral-950 border border-neutral-800 hover:border-neutral-600 rounded flex items-center justify-between cursor-pointer transition group"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-slate-800 rounded-lg text-slate-400 group-hover:text-blue-400 transition">
-                        <FileText size={20} />
+                      <div className="p-2.5 bg-neutral-900 border border-neutral-800 rounded text-neutral-400 group-hover:text-white transition">
+                        <FileText size={18} />
                       </div>
                       <div>
                         <div className="flex items-center gap-3">
-                          <span className="font-medium text-slate-200">{item.input.filename}</span>
+                          <span className="font-mono text-sm text-neutral-200">{item.input.filename}</span>
                           {getVerdictBadge(item.verdict.label)}
                         </div>
-                        <div className="flex items-center gap-4 mt-1 text-xs text-slate-400 font-mono">
-                          <span>SHA: {item.input.sha256.substring(0, 12)}...</span>
+                        <div className="flex items-center gap-4 mt-1 text-[11px] text-neutral-400 font-mono">
+                          <span>SHA: {item.input.sha256.substring(0, 16)}...</span>
                           <span>{item.input.width}×{item.input.height}px</span>
                           <span>{new Date(item.created_at).toLocaleString()}</span>
                         </div>
@@ -215,7 +211,7 @@ function App() {
                     </div>
                     <div className="flex items-center gap-3">
                       {getRiskBadge(item.verdict.risk)}
-                      <ArrowRight size={16} className="text-slate-600 group-hover:text-slate-300 transition" />
+                      <ArrowRight size={16} className="text-neutral-600 group-hover:text-white transition" />
                     </div>
                   </div>
                 ))}
@@ -225,18 +221,18 @@ function App() {
         )}
 
         {(!currentScan && activeTab === 'upload') && (
-          <div className="max-w-3xl mx-auto w-full my-auto py-12 space-y-8">
+          <div className="max-w-2xl mx-auto w-full my-auto py-16 space-y-8">
             <div className="text-center space-y-3">
-              <h2 className="text-3xl font-extrabold tracking-tight text-slate-100">Upload Evidence for Forensic Analysis</h2>
-              <p className="text-slate-400 text-sm max-w-xl mx-auto">
-                Upload JPEG, PNG, or WEBP images. The platform runs Vision Transformer AI detection, Metadata inspection, Error Level Analysis (ELA), Noise residuals, and 2D FFT Frequency spectra.
+              <h2 className="text-2xl font-mono uppercase tracking-widest text-white">Forensic Evidence Ingestion</h2>
+              <p className="text-neutral-400 text-xs font-mono leading-relaxed max-w-lg mx-auto">
+                Upload image evidence (JPEG, PNG, WEBP). Pipeline executes Vision Transformer AI detection, EXIF/XMP inspection, Error Level Analysis (ELA), Noise residuals, and 2D FFT Frequency spectra.
               </p>
             </div>
 
             <div 
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
-              className="border-2 border-dashed border-slate-700 hover:border-blue-500/50 bg-slate-900/40 rounded-2xl p-10 text-center transition flex flex-col items-center justify-center relative cursor-pointer"
+              className="border border-neutral-700 hover:border-white bg-neutral-950 rounded p-12 text-center transition flex flex-col items-center justify-center relative cursor-pointer"
             >
               <input 
                 type="file" 
@@ -244,20 +240,20 @@ function App() {
                 onChange={handleFileChange}
                 className="absolute inset-0 opacity-0 cursor-pointer"
               />
-              <div className="p-4 bg-blue-600/10 border border-blue-500/20 rounded-full text-blue-400 mb-4">
-                <Upload size={32} />
+              <div className="p-3 border border-neutral-700 rounded text-neutral-300 mb-4 bg-neutral-900">
+                <Upload size={24} />
               </div>
-              <h3 className="text-lg font-semibold text-slate-200 mb-1">
-                {file ? file.name : "Drag & drop image here, or click to browse"}
+              <h3 className="text-sm font-mono text-neutral-200 mb-1">
+                {file ? file.name : "Drag & drop file here, or click to select"}
               </h3>
-              <p className="text-xs text-slate-500">Supports JPEG, PNG, WEBP up to 15 MiB (Max 8192px per side)</p>
+              <p className="text-[11px] text-neutral-500 font-mono">Max size 15 MiB • Max dimensions 8192px per side</p>
 
               {file && (
-                <div className="mt-6 flex items-center gap-3 bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700">
-                  <span className="text-xs text-slate-300 font-mono">{(file.size / 1024).toFixed(1)} KB</span>
+                <div className="mt-6 flex items-center gap-3 bg-neutral-900 px-3 py-1.5 rounded border border-neutral-800">
+                  <span className="text-[11px] text-neutral-300 font-mono">{(file.size / 1024).toFixed(1)} KB</span>
                   <button 
                     onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                    className="text-xs text-red-400 hover:text-red-300 ml-2"
+                    className="text-[11px] text-neutral-400 hover:text-white ml-2 underline font-mono"
                   >
                     Remove
                   </button>
@@ -266,8 +262,8 @@ function App() {
             </div>
 
             {error && (
-              <div className="p-4 bg-red-950/40 border border-red-800/50 rounded-xl text-red-300 text-sm flex items-center gap-3">
-                <AlertTriangle size={18} className="shrink-0 text-red-400" />
+              <div className="p-3 bg-neutral-900 border border-neutral-700 rounded text-neutral-200 text-xs font-mono flex items-center gap-3">
+                <AlertTriangle size={16} className="shrink-0 text-white" />
                 <span>{error}</span>
               </div>
             )}
@@ -275,17 +271,17 @@ function App() {
             <button 
               onClick={handleUpload}
               disabled={!file || loading}
-              className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center gap-2"
+              className="w-full py-3 bg-white hover:bg-neutral-200 disabled:bg-neutral-900 disabled:text-neutral-600 text-black font-mono text-xs uppercase font-bold tracking-widest rounded transition flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
-                  <RefreshCw size={18} className="animate-spin" />
-                  Analyzing Evidence...
+                  <RefreshCw size={14} className="animate-spin" />
+                  Executing Forensic Pipeline...
                 </>
               ) : (
                 <>
-                  <Sparkles size={18} />
-                  Run Forensic Scan
+                  <Sparkles size={14} />
+                  Initiate Inspection Scan
                 </>
               )}
             </button>
@@ -293,32 +289,32 @@ function App() {
         )}
 
         {currentScan && (
-          <div className="space-y-8 pb-12">
+          <div className="space-y-6 pb-12">
             {/* Top Bar for Results */}
-            <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 p-6 rounded-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-neutral-950 border border-neutral-800 p-6 rounded">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-xs font-mono text-slate-400">SCAN ID: {currentScan.scan_id}</span>
+                  <span className="text-[11px] font-mono text-neutral-400">SCAN ID: {currentScan.scan_id}</span>
                   {getVerdictBadge(currentScan.verdict.label)}
                   {getRiskBadge(currentScan.verdict.risk)}
                 </div>
-                <h2 className="text-xl font-bold text-slate-100">{currentScan.input.filename}</h2>
-                <p className="text-xs text-slate-400 mt-1 font-mono">
+                <h2 className="text-lg font-mono text-white">{currentScan.input.filename}</h2>
+                <p className="text-[11px] text-neutral-400 mt-1 font-mono">
                   SHA-256: {currentScan.input.sha256} | {currentScan.input.width}×{currentScan.input.height}px | {(currentScan.input.byte_size / 1024).toFixed(1)} KB ({currentScan.input.media_type})
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 <a 
-                  href={`http://localhost:8000/api/scans/${currentScan.scan_id}/report.pdf`}
+                  href={`${API_BASE}/api/scans/${currentScan.scan_id}/report.pdf`}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-medium transition flex items-center gap-2 border border-slate-700"
+                  className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-xs font-mono uppercase tracking-wider transition flex items-center gap-2 border border-neutral-700"
                 >
-                  <Download size={16} /> Download PDF Report
+                  <Download size={14} /> Download PDF Report
                 </a>
                 <button 
                   onClick={() => setCurrentScan(null)}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium transition"
+                  className="px-4 py-2 bg-white text-black hover:bg-neutral-200 rounded text-xs font-mono uppercase font-bold tracking-wider transition"
                 >
                   New Scan
                 </button>
@@ -327,28 +323,28 @@ function App() {
 
             {/* AI Detector & Verdict Rationale */}
             <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-slate-200 flex items-center gap-2">
-                    <Cpu size={18} className="text-blue-400" /> AI Detection Model
+              <div className="bg-neutral-950 border border-neutral-800 p-6 rounded space-y-4">
+                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                  <h3 className="font-mono text-xs uppercase tracking-wider text-white flex items-center gap-2">
+                    <Cpu size={16} className="text-neutral-400" /> AI Detection Model
                   </h3>
-                  <span className="text-xs font-mono text-slate-400">ViT-Small (Community Forensics)</span>
+                  <span className="text-[11px] font-mono text-neutral-400">ViT-Small</span>
                 </div>
                 {currentScan.models[0] && (
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
-                      <span className="text-sm text-slate-300">Fake Probability</span>
-                      <span className="font-mono font-bold text-lg text-slate-100">
+                    <div className="flex justify-between items-center p-3 bg-neutral-900 rounded border border-neutral-800">
+                      <span className="text-xs font-mono text-neutral-300">Fake Probability</span>
+                      <span className="font-mono font-bold text-base text-white">
                         {currentScan.models[0].fake_probability !== null 
                           ? `${(currentScan.models[0].fake_probability * 100).toFixed(2)}%` 
                           : 'N/A'}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-400">
-                      <div className="p-2.5 bg-slate-800/30 rounded-lg border border-slate-800">
-                        Raw Logit: {currentScan.models[0].raw_logit?.toFixed(4) ?? 'N/A'}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-neutral-400">
+                      <div className="p-2 bg-neutral-900 rounded border border-neutral-800">
+                        Logit: {currentScan.models[0].raw_logit?.toFixed(4) ?? 'N/A'}
                       </div>
-                      <div className="p-2.5 bg-slate-800/30 rounded-lg border border-slate-800">
+                      <div className="p-2 bg-neutral-900 rounded border border-neutral-800">
                         Device: {currentScan.models[0].device ?? 'N/A'} ({currentScan.models[0].duration_seconds}s)
                       </div>
                     </div>
@@ -356,57 +352,57 @@ function App() {
                 )}
               </div>
 
-              <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl space-y-4">
-                <h3 className="font-semibold text-slate-200 flex items-center gap-2">
-                  <FileText size={18} className="text-amber-400" /> Verdict Rationale
+              <div className="bg-neutral-950 border border-neutral-800 p-6 rounded space-y-4">
+                <h3 className="font-mono text-xs uppercase tracking-wider text-white flex items-center gap-2 border-b border-neutral-800 pb-3">
+                  <FileText size={16} className="text-neutral-400" /> Verdict Rationale
                 </h3>
-                <ul className="space-y-2 text-sm text-slate-300">
+                <ul className="space-y-2 text-xs font-mono text-neutral-300">
                   {currentScan.verdict.rationale.map((rat, idx) => (
                     <li key={idx} className="flex items-start gap-2">
-                      <span className="text-blue-400 font-bold">•</span>
+                      <span className="text-white font-bold">—</span>
                       <span>{rat}</span>
                     </li>
                   ))}
                 </ul>
-                <div className="pt-2 border-t border-slate-800 text-xs text-slate-500">
-                  <span className="font-semibold text-slate-400">Explicitly Not Claimed:</span> {currentScan.verdict.not_claimed.join('; ')}
+                <div className="pt-2 border-t border-neutral-800 text-[10px] text-neutral-500 font-mono">
+                  <span className="font-semibold text-neutral-400">Explicitly Not Claimed:</span> {currentScan.verdict.not_claimed.join('; ')}
                 </div>
               </div>
             </div>
 
             {/* Evidence Items / Forensic Indicators */}
             <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-                <Layers size={20} className="text-purple-400" /> Normalized Evidence & Forensic Analyzers
+              <h3 className="text-sm font-mono uppercase tracking-wider text-white flex items-center gap-2">
+                <Layers size={16} className="text-neutral-400" /> Normalized Evidence & Forensic Analyzers
               </h3>
 
               <div className="grid md:grid-cols-2 gap-4">
                 {(currentScan.evidence_items || []).map((ev) => (
-                  <div key={ev.id} className="bg-slate-900/60 border border-slate-800 p-5 rounded-xl space-y-3">
+                  <div key={ev.id} className="bg-neutral-950 border border-neutral-800 p-5 rounded space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold uppercase text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-300 font-mono">{ev.id}</span>
-                        <span className="text-xs px-2 py-0.5 bg-blue-950/60 text-blue-400 border border-blue-800/40 rounded font-mono">{ev.evidence_category}</span>
+                        <span className="font-mono text-xs uppercase px-2 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-white font-bold">{ev.id}</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-neutral-900 text-neutral-300 border border-neutral-800 rounded font-mono">{ev.evidence_category}</span>
                       </div>
-                      <span className="text-xs font-mono text-slate-400 uppercase">Method: {ev.method}</span>
+                      <span className="text-[10px] font-mono text-neutral-500 uppercase">Method: {ev.method}</span>
                     </div>
 
-                    <p className="text-sm text-slate-300">{ev.interpretation || "No interpretation provided."}</p>
+                    <p className="text-xs font-mono text-neutral-300 leading-relaxed">{ev.interpretation || "No interpretation provided."}</p>
 
                     {ev.result && Object.keys(ev.result).length > 0 && (
-                      <div className="bg-slate-950/60 p-3 rounded-lg font-mono text-xs text-slate-400 overflow-x-auto border border-slate-800">
+                      <div className="bg-black p-3 rounded font-mono text-[10px] text-neutral-400 overflow-x-auto border border-neutral-800">
                         <pre>{JSON.stringify(ev.result, null, 2)}</pre>
                       </div>
                     )}
 
                     {ev.artifact && (
-                      <div className="mt-3 pt-3 border-t border-slate-800">
-                        <p className="text-xs text-slate-400 mb-2 font-semibold">Generated Artifact ({ev.id}):</p>
-                        <div className="rounded-lg overflow-hidden border border-slate-700 bg-slate-955 max-h-60 flex items-center justify-center">
+                      <div className="mt-3 pt-3 border-t border-neutral-800">
+                        <p className="text-[11px] text-neutral-400 mb-2 font-mono uppercase">Generated Artifact ({ev.id}):</p>
+                        <div className="rounded overflow-hidden border border-neutral-800 bg-black max-h-56 flex items-center justify-center">
                           <img 
                             src={formatArtifactUrl(ev.artifact) || ''} 
                             alt={`${ev.id} artifact`} 
-                            className="object-contain max-h-60 w-full"
+                            className="object-contain max-h-56 w-full"
                           />
                         </div>
                       </div>
@@ -420,7 +416,7 @@ function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 py-6 text-center text-xs text-slate-500 font-mono">
+      <footer className="border-t border-neutral-800 py-6 text-center text-[10px] text-neutral-500 font-mono tracking-widest uppercase">
         PHANTOM PHOENIX FORENSIC INTELLIGENCE ENGINE • SCREENING AID ONLY • NOT LEGAL PROOF
       </footer>
     </div>
