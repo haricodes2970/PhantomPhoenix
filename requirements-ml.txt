@@ -1,0 +1,20 @@
+# PHANTOM PHOENIX ML environment.
+# Python 3.12 only. Do not install into system Python 3.14.
+#
+# torch and torchvision are NOT listed here. They must come from the
+# PyTorch CUDA 12.8 index, or pip will install a CPU build from PyPI.
+# See docs/ML_SETUP.md.
+#
+# Compatibility checked 2026-10-14:
+# - torch 2.11.0+cu128 has a cp312 manylinux x86_64 wheel
+# - NVIDIA driver 610.43.03 reports CUDA UMD 13.3, which can load CUDA 12.8
+# - CommunityForensics-DeepfakeDet-ViT requires transformers >= 5.4.0
+#   (preprocessor uses size.shortest_edge)
+# - transformers < 5.10.0 has GHSA-xrqw-3rrv-vx5w; pin at or above 5.10.0
+# - transformers 5.4.0 declares torch >= 2.4
+# - Model config: num_labels=1, image_size=384, num_attention_heads=6
+
+transformers>=5.10.0,<5.20.0
+huggingface-hub>=0.36.0,<2.0.0
+pillow>=10.0.1,<16.0.0
+safetensors>=0.4.3

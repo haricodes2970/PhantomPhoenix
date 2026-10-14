@@ -1,0 +1,16 @@
+# Python environment and package caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model weights and Hugging Face caches
+models/
+.cache/
+**/.hf-cache/
+
+# Local evidence and generated artifacts
+data/
+*.log
