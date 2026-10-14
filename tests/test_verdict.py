@@ -9,9 +9,6 @@ from backend.schemas import VerdictLabel, RiskLevel
 
 def test_likely_ai_verdict(client: TestClient, mock_detector_high_score) -> None:
     """High fake probability -> LIKELY_AI."""
-    img_bytes = b"fake-image-data"  # Will be replaced by mock
-
-    # Need to use a real image for validation, then mock takes over
     import io
     from PIL import Image
     img = Image.new("RGB", (100, 100), (128, 128, 128))
@@ -30,8 +27,9 @@ def test_likely_ai_verdict(client: TestClient, mock_detector_high_score) -> None
 
     assert result["verdict"]["label"] == VerdictLabel.LIKELY_AI
     assert result["verdict"]["risk"] == RiskLevel.HIGH
-    assert any("0.9500" in r for r in result["verdict"]["rationale"])
-    assert "calibrated confidence - provisional screening thresholds only" in result["verdict"]["not_claimed"]
+    assert any("LIKELY_AI" in r and "0.95" in r for r in result["verdict"]["rationale"])
+    assert "generator identity" in result["verdict"]["not_claimed"]
+    assert "calibrated real-world criminal fraud probability" in result["verdict"]["not_claimed"]
 
 
 def test_likely_real_verdict(client: TestClient, mock_detector) -> None:
@@ -54,8 +52,9 @@ def test_likely_real_verdict(client: TestClient, mock_detector) -> None:
 
     assert result["verdict"]["label"] == VerdictLabel.LIKELY_REAL
     assert result["verdict"]["risk"] == RiskLevel.LOW
-    assert any("0.1000" in r for r in result["verdict"]["rationale"])
-    assert "calibrated confidence - provisional screening thresholds only" in result["verdict"]["not_claimed"]
+    assert any("LIKELY_REAL" in r and "0.10" in r for r in result["verdict"]["rationale"])
+    assert "generator identity" in result["verdict"]["not_claimed"]
+    assert "calibrated real-world criminal fraud probability" in result["verdict"]["not_claimed"]
 
 
 def test_inconclusive_verdict(client: TestClient, mock_detector_mid_score) -> None:
@@ -78,7 +77,7 @@ def test_inconclusive_verdict(client: TestClient, mock_detector_mid_score) -> No
 
     assert result["verdict"]["label"] == VerdictLabel.INCONCLUSIVE
     assert result["verdict"]["risk"] == RiskLevel.MODERATE
-    assert any("between thresholds" in r for r in result["verdict"]["rationale"])
+    assert any("INCONCLUSIVE" in r and "0.50" in r for r in result["verdict"]["rationale"])
 
 
 def test_detector_error_never_produces_likely_real(client: TestClient, mock_detector_error) -> None:

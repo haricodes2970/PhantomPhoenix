@@ -78,4 +78,4 @@ def test_real_model_inference():
         )
         assert result["verdict"]["risk"] in ("low", "moderate", "high", "unknown")
         assert len(result["verdict"]["rationale"]) > 0
-        assert "calibrated confidence - provisional screening thresholds only" in result["verdict"]["not_claimed"]
+        assert "calibrated real-world criminal fraud probability" in result["verdict"]["not_claimed"]

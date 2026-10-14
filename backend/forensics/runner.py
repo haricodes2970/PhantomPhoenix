@@ -49,6 +49,7 @@ def run_all_analyzers(validated: ValidatedImage, scan_id: str) -> list[Indicator
                         "error": res.error,
                     },
                     note=res.interpretation,
+                    artifact=res.artifact,
                 )
             )
         except Exception as exc:
@@ -59,6 +60,7 @@ def run_all_analyzers(validated: ValidatedImage, scan_id: str) -> list[Indicator
                     status="error",
                     value={"error": str(exc)},
                     note=f"Analyzer failed: {exc}",
+                    artifact=None,
                 )
             )
 

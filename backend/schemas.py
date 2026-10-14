@@ -59,6 +59,7 @@ class Indicator(BaseModel):
     status: str  # present, absent, stripped, unverified, not_checked, error
     value: dict[str, Any] = Field(default_factory=dict)
     note: str = ""
+    artifact: str | None = None
 
 
 class Explainability(BaseModel):
@@ -76,6 +77,20 @@ class Verdict(BaseModel):
     risk: RiskLevel
     rationale: list[str] = Field(default_factory=list)
     not_claimed: list[str] = Field(default_factory=list)
+
+
+class NormalizedEvidenceItem(BaseModel):
+    """Normalized evidence item with full traceability."""
+
+    id: str
+    source: str  # "ai_detector" | "forensic_metadata" | "forensic_ela" | "forensic_noise" | "forensic_frequency"
+    method: str  # "computed" | "heuristic" | "verified" | "model_inference" | "unknown"
+    status: str  # "ok" | "error" | "not_applicable" | "present" | "absent"
+    evidence_category: str  # "model_inference" | "computed_observation" | "heuristic" | "verified_evidence" | "unknown_or_unavailable"
+    result: dict[str, Any] = Field(default_factory=dict)
+    interpretation: str = ""
+    limitations: list[str] = Field(default_factory=list)
+    artifact: str | None = None
 
 
 class InputDetails(BaseModel):
@@ -98,6 +113,7 @@ class ScanResult(BaseModel):
     input: InputDetails
     models: list[ModelOutput]
     indicators: list[Indicator] = Field(default_factory=list)
+    evidence_items: list[NormalizedEvidenceItem] = Field(default_factory=list)
     explainability: Explainability = Field(default_factory=Explainability)
     verdict: Verdict
     error: str | None = None

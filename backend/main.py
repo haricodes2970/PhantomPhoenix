@@ -36,6 +36,7 @@ from backend.schemas import (
 )
 from backend.verdict import determine_verdict
 from backend.forensics.runner import run_all_analyzers
+from backend.aggregator import aggregate_assessment
 
 
 app = FastAPI(
@@ -177,11 +178,17 @@ async def create_scan(
         height=validated.height,
     )
 
-    # Determine verdict
-    verdict = determine_verdict(models, settings.likely_ai_threshold, settings.likely_real_threshold)
-
     # Run forensic analyzers (metadata, ELA, noise, frequency)
     indicators = run_all_analyzers(validated, scan_id)
+
+    # Aggregate evidence and determine verdict
+    assessment = aggregate_assessment(
+        models=models,
+        indicators=indicators,
+        likely_ai_threshold=settings.likely_ai_threshold,
+        likely_real_threshold=settings.likely_real_threshold,
+    )
+    verdict = assessment.verdict
 
     # Placeholder explainability (future: saliency heatmap)
     explainability = Explainability()
@@ -193,6 +200,7 @@ async def create_scan(
         input=input_details,
         models=models,
         indicators=indicators,
+        evidence_items=assessment.evidence_items,
         explainability=explainability,
         verdict=verdict,
         error=error,
