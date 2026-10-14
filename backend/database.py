@@ -5,7 +5,9 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Generator
 
+import os
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -18,12 +20,13 @@ class Base(DeclarativeBase):
     pass
 
 
+is_testing = bool(os.environ.get("RUN_DB_TESTS") or os.environ.get("TESTING"))
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.database_echo,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    poolclass=NullPool if is_testing else None,
+    pool_pre_ping=True if not is_testing else False,
 )
 
 async_session_factory = async_sessionmaker(
