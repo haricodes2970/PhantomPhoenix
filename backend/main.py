@@ -37,7 +37,11 @@ from backend.schemas import (
 from backend.verdict import determine_verdict
 from backend.forensics.runner import run_all_analyzers
 from backend.aggregator import aggregate_assessment
+from backend.report import generate_scan_pdf
 
+
+from fastapi.staticfiles import StaticFiles
+import os
 
 app = FastAPI(
     title="PHANTOM PHOENIX",
@@ -46,6 +50,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Mount artifacts directory for safe static retrieval of forensic images
+os.makedirs("uploads/artifacts", exist_ok=True)
+app.mount("/api/artifacts", StaticFiles(directory="uploads/artifacts"), name="artifacts")
 
 # CORS - restrict to Vite dev origin in production
 app.add_middleware(
@@ -286,6 +294,52 @@ async def get_scan(
         )
 
     return JSONResponse(content=scan.to_scan_result())
+
+
+@app.get("/api/scans/{scan_id}/report.pdf")
+async def download_report(
+    scan_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Download a forensic PDF report for an existing scan."""
+    repo = ScanRepository(session)
+    scan = await repo.get_by_id(scan_id)
+
+    if scan is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorResponse(
+                error=ErrorDetail(
+                    code="NOT_FOUND",
+                    message="Scan not found",
+                    detail=f"No scan with id {scan_id}",
+                )
+            ).model_dump(),
+        )
+
+    try:
+        pdf_bytes = generate_scan_pdf(scan)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ErrorResponse(
+                error=ErrorDetail(
+                    code="REPORT_GENERATION_FAILED",
+                    message="Failed to generate PDF report",
+                    detail=str(exc),
+                )
+            ).model_dump(),
+        )
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="phantom_phoenix_report_{scan_id}.pdf"'
+        },
+    )
 
 
 if __name__ == "__main__":
