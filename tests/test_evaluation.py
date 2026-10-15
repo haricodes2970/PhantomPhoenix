@@ -34,13 +34,7 @@ def test_evaluator_csv_manifest(tmp_path: Path) -> None:
         writer.writerow([str(real_img), "real"])
         writer.writerow([str(fake_img), "fake"])
 
-    # Mock detector returning low prob for real, high prob for fake
     mock_detector = MagicMock()
-    def mock_infer(img):
-        # We can inspect or return based on call order or just test metrics logic
-        pass
-
-    # Let's mock side_effect to return 0.1 for real, 0.9 for fake
     mock_detector.infer.side_effect = [
         ModelOutput(model_id="test", model_revision="v1", role="primary", status="ok", fake_probability=0.05, raw_logit=-3.0, threshold_policy="", limitations=[], device="cpu", duration_seconds=0.01),
         ModelOutput(model_id="test", model_revision="v1", role="primary", status="ok", fake_probability=0.95, raw_logit=3.0, threshold_policy="", limitations=[], device="cpu", duration_seconds=0.01),
@@ -54,15 +48,15 @@ def test_evaluator_csv_manifest(tmp_path: Path) -> None:
     assert report["metrics"]["precision"] == 1.0
     assert report["metrics"]["recall"] == 1.0
     assert report["metrics"]["f1_score"] == 1.0
+    assert report["metrics"]["confusion_matrix"] == [[1, 0], [0, 1]]
 
-    # Test export
     json_out, md_out = evaluator.export_summary(report, tmp_path)
     assert json_out.is_file()
     assert md_out.is_file()
 
 
 def test_evaluator_json_manifest(tmp_path: Path) -> None:
-    """Test evaluation on a JSON manifest."""
+    """Test evaluation on a JSON manifest (single class edge case for AUC)."""
     img1 = tmp_path / "img1.jpg"
     create_synthetic_image(img1)
 
@@ -82,19 +76,45 @@ def test_evaluator_json_manifest(tmp_path: Path) -> None:
 
     assert report["processed_samples"] == 1
     assert report["metrics"]["accuracy"] == 1.0
+    assert report["metrics"]["roc_auc"] is None  # Undefined for single class
+    assert report["metrics"]["confusion_matrix"] == [[1, 0], [0, 0]]
 
 
-def test_evaluator_handles_missing_file(tmp_path: Path) -> None:
-    """Test evaluator handles missing image files gracefully in manifest."""
+def test_evaluator_handles_missing_file_and_invalid_label(tmp_path: Path) -> None:
+    """Test evaluator handles missing image files and invalid labels gracefully."""
     manifest = tmp_path / "manifest.csv"
     with manifest.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["path", "label"])
         writer.writerow(["/nonexistent/path/image.jpg", "real"])
+        writer.writerow([str(tmp_path / "img1.jpg"), "unknown_label"])
 
     evaluator = DetectorEvaluator(detector=MagicMock())
     report = evaluator.evaluate_manifest(manifest)
 
     assert report["processed_samples"] == 0
-    assert report["excluded_count"] == 1
+    assert report["excluded_count"] == 2
     assert report["metrics"] == {}
+
+
+def test_evaluator_inference_error_handling(tmp_path: Path) -> None:
+    """Test evaluator handles model inference exceptions gracefully."""
+    img1 = tmp_path / "img1.jpg"
+    create_synthetic_image(img1)
+
+    manifest = tmp_path / "manifest.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["path", "label"])
+        writer.writerow([str(img1), "real"])
+
+    mock_detector = MagicMock()
+    mock_detector.infer.side_effect = RuntimeError("GPU OOM or model error")
+
+    evaluator = DetectorEvaluator(detector=mock_detector)
+    report = evaluator.evaluate_manifest(manifest)
+
+    assert report["processed_samples"] == 0
+    assert report["inference_error_count"] == 1
+    assert len(report["inference_errors"]) == 1
+    assert "GPU OOM" in report["inference_errors"][0]["reason"]

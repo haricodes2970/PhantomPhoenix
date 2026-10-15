@@ -102,10 +102,13 @@ class DetectorEvaluator:
             y_pred = [1 if s >= threshold else 0 for s in y_score]
             acc = float(accuracy_score(y_true, y_pred))
             prec, rec, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary", zero_division=0)
-            cm = confusion_matrix(y_true, y_pred).tolist()
+            cm = confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist()
 
             try:
-                auc = float(roc_auc_score(y_true, y_score))
+                if len(np.unique(y_true)) < 2:
+                    auc = None
+                else:
+                    auc = float(roc_auc_score(y_true, y_score))
             except Exception:
                 auc = None
 
