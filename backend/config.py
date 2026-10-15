@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     # Model
     model_id: str = "buildborderless/CommunityForensics-DeepfakeDet-ViT"
+    model_revision: str = "ac6ee457bea904a373065754107451793b56db00"
     device: str = "auto"  # auto, cuda, cpu
     max_image_size_mb: int = 15
     max_dimension_px: int = 8192

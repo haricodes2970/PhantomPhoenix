@@ -21,7 +21,8 @@ class DetectorConfig:
     """Immutable detector configuration."""
 
     model_id: str
-    device: str  # auto, cuda, cpu
+    model_revision: str = "ac6ee457bea904a373065754107451793b56db00"
+    device: str = "auto"  # auto, cuda, cpu
     expected_num_labels: int = 1
     expected_shortest_edge: int = 440
     expected_crop: int = 384
@@ -70,6 +71,7 @@ class DetectorAdapter:
             return
         self._config = config or DetectorConfig(
             model_id=settings.model_id,
+            model_revision=settings.model_revision,
             device=settings.device,
         )
         self._model: ViTForImageClassification | None = None
@@ -84,8 +86,12 @@ class DetectorAdapter:
             return
 
         try:
-            self._processor = ViTImageProcessor.from_pretrained(self._config.model_id)
-            self._model = ViTForImageClassification.from_pretrained(self._config.model_id)
+            self._processor = ViTImageProcessor.from_pretrained(
+                self._config.model_id, revision=self._config.model_revision
+            )
+            self._model = ViTForImageClassification.from_pretrained(
+                self._config.model_id, revision=self._config.model_revision
+            )
         except Exception as exc:
             self._load_error = f"{type(exc).__name__}: {exc}"
             raise ModelLoadError(self._load_error) from exc
