@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import math
 import time
 import threading
 from dataclasses import dataclass
@@ -14,6 +16,8 @@ from transformers import ViTForImageClassification, ViTImageProcessor
 
 from backend.config import settings
 from backend.schemas import ModelOutput
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -89,8 +93,13 @@ class DetectorAdapter:
             self._processor = ViTImageProcessor.from_pretrained(
                 self._config.model_id, revision=self._config.model_revision
             )
+            # "eager" attention is required: the default SDPA kernel does not
+            # materialize attention matrices, so output_attentions=True would
+            # return an empty tuple and no genuine explainability could be derived.
             self._model = ViTForImageClassification.from_pretrained(
-                self._config.model_id, revision=self._config.model_revision
+                self._config.model_id,
+                revision=self._config.model_revision,
+                attn_implementation="eager",
             )
         except Exception as exc:
             self._load_error = f"{type(exc).__name__}: {exc}"
@@ -141,7 +150,7 @@ class DetectorAdapter:
         with torch.inference_mode():
             outputs = self._model(**inputs, output_attentions=True)
             logits = outputs.logits
-            attentions = outputs.attentions
+            attentions = getattr(outputs, "attentions", None)
         if device.type == "cuda":
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - started
@@ -149,22 +158,7 @@ class DetectorAdapter:
         logit = float(logits.detach().float().cpu().reshape(-1)[0])
         fake_probability = float(torch.sigmoid(torch.tensor(logit)))
 
-        attn_metrics = {}
-        if attentions is not None and len(attentions) > 0:
-            try:
-                last_layer = attentions[-1].detach().float().cpu()
-                mean_heads = last_layer.mean(dim=1)[0]
-                cls_to_patches = mean_heads[0, 1:]
-                # normalize
-                cls_to_patches = cls_to_patches / (cls_to_patches.sum() + 1e-9)
-                entropy = float(-(cls_to_patches * torch.log(cls_to_patches + 1e-9)).sum())
-                attn_metrics = {
-                    "mean_cls_attention": float(cls_to_patches.mean()),
-                    "max_cls_attention": float(cls_to_patches.max()),
-                    "attention_entropy": entropy,
-                }
-            except Exception:
-                pass
+        attn_metrics = self._compute_attention_metrics(attentions)
 
         explainability_data = {
             "status": "available" if attn_metrics else "unavailable",
@@ -190,6 +184,58 @@ class DetectorAdapter:
             duration_seconds=round(elapsed, 6),
             explainability=explainability_data,
         )
+
+    @staticmethod
+    def _compute_attention_metrics(attentions: Any) -> dict[str, Any]:
+        """Derive a CLS-to-patch attention summary from real attention tensors.
+
+        Returns an empty dict when attention tensors are unavailable, empty, or
+        contain non-finite values. This never substitutes fabricated metrics: the
+        caller reports explainability as "unavailable" when no valid tensors exist.
+        """
+        if attentions is None:
+            return {}
+        try:
+            if len(attentions) == 0:  # SDPA path returns an empty tuple
+                return {}
+
+            last_layer = attentions[-1].detach().float().cpu()
+            if last_layer.dim() != 4:
+                return {}
+
+            num_layers = len(attentions)
+            num_heads = int(last_layer.shape[1])
+            mean_heads = last_layer.mean(dim=1)[0]  # [seq_len, seq_len]
+            num_patches = int(mean_heads.shape[-1]) - 1
+            if num_patches <= 0:
+                return {}
+
+            cls_to_patches = mean_heads[0, 1:]  # attention from [CLS] to image patches
+            if not bool(torch.isfinite(cls_to_patches).all()):
+                return {}
+
+            total = cls_to_patches.sum()
+            if not bool(torch.isfinite(total)) or float(total) <= 0.0:
+                return {}
+
+            probs = cls_to_patches / (total + 1e-12)
+            entropy = float(-(probs * torch.log(probs + 1e-12)).sum())
+
+            metrics: dict[str, Any] = {
+                "num_layers": num_layers,
+                "num_heads": num_heads,
+                "num_patches": num_patches,
+                "mean_cls_attention": float(probs.mean()),
+                "max_cls_attention": float(probs.max()),
+                "attention_entropy": entropy,
+            }
+            numeric = [v for v in metrics.values() if isinstance(v, float)]
+            if not all(math.isfinite(v) for v in numeric):
+                return {}
+            return metrics
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to derive attention metrics: %s", exc)
+            return {}
 
     def infer(self, image: Image.Image) -> ModelOutput:
         """Run inference with device fallback. Raises InferenceError if all fail."""

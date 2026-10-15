@@ -52,6 +52,7 @@ docker compose up -d
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Service health and detector status |
+| GET | `/health` | Unversioned alias of `/api/health` (for external/local health probes) |
 | POST | `/api/scans` | Upload image for AI detection & forensics (multipart/form-data) |
 | GET | `/api/scans` | Paginated scan history |
 | GET | `/api/scans/{id}` | Retrieve stored scan result & forensic indicators |
@@ -61,6 +62,8 @@ docker compose up -d
 ```bash
 # Health check
 curl http://localhost:8000/api/health
+# Equivalent unversioned alias (same payload)
+curl http://localhost:8000/health
 
 # Analyze image (runs AI detection + metadata, ELA, noise, frequency analyzers)
 curl -X POST http://localhost:8000/api/scans \

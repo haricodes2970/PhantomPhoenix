@@ -106,12 +106,17 @@ async def on_shutdown() -> None:
     await close_db()
 
 
+@app.get("/health", response_model=HealthResponse, include_in_schema=False)
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check(
     detector: DetectorAdapter = Depends(get_detector_dependency),
     session: AsyncSession = Depends(get_session),
 ) -> HealthResponse:
-    """Service health and detector status."""
+    """Service health and detector status.
+
+    Exposed at both /api/health (documented, used by the frontend/tooling) and
+    /health (unversioned alias for external/local health probes).
+    """
     info = detector.health_info()
     cuda_available = info["cuda_available"]
 

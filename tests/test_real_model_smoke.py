@@ -70,6 +70,17 @@ def test_real_model_inference():
             assert model["duration_seconds"] is not None
             assert model["duration_seconds"] > 0
 
+            # Real attention tensors must be derived (eager attention), not faked.
+            explainability = result["explainability"]
+            assert explainability["status"] == "available"
+            assert explainability["kind"] == "attention_rollout"
+            metrics = explainability["metrics"]
+            assert metrics["num_layers"] > 0
+            assert metrics["num_heads"] > 0
+            assert metrics["num_patches"] > 0
+            for key in ("mean_cls_attention", "max_cls_attention", "attention_entropy"):
+                assert isinstance(metrics[key], (int, float))
+
         assert result["verdict"]["label"] in (
             "LIKELY_AI",
             "LIKELY_REAL",

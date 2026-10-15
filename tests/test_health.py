@@ -30,3 +30,13 @@ def test_health_endpoint_degraded_when_detector_failed(client: TestClient, mock_
     assert data["status"] == "degraded"
     assert data["detector_loaded"] is False
     assert data["detector_model_id"] is None
+
+
+def test_health_alias_matches_versioned_endpoint(client: TestClient, mock_detector) -> None:
+    """Unversioned /health alias returns the same payload as /api/health."""
+    alias = client.get("/health")
+    versioned = client.get("/api/health")
+
+    assert alias.status_code == 200
+    assert alias.json() == versioned.json()
+    assert alias.json()["status"] == "ok"

@@ -40,7 +40,7 @@ def test_detector_passes_revision_to_pretrained(monkeypatch: pytest.MonkeyPatch)
         "test-model-id", revision="test-rev-123"
     )
     mock_model_cls.from_pretrained.assert_called_once_with(
-        "test-model-id", revision="test-rev-123"
+        "test-model-id", revision="test-rev-123", attn_implementation="eager"
     )
 
     DetectorAdapter().reset_for_testing()
