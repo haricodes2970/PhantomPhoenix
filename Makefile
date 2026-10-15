@@ -1,4 +1,4 @@
-.PHONY: help venv db migrate test test-db build run-backend run-frontend
+.PHONY: help venv db migrate test test-db build run-backend run-frontend verify
 
 help:
 	@echo "PHANTOM PHOENIX - Local Development Commands"
@@ -10,6 +10,7 @@ help:
 	@echo "make build        - Build frontend production bundle"
 	@echo "make run-backend  - Start FastAPI backend server"
 	@echo "make run-frontend - Start Vite frontend dev server"
+	@echo "make verify       - Run all unit tests, DB integration tests, and build"
 
 db:
 	docker compose up -d
@@ -34,3 +35,6 @@ run-backend:
 
 run-frontend:
 	cd frontend && npm run dev
+
+verify: test test-db build
+	@echo "All tests and frontend build verified successfully."
