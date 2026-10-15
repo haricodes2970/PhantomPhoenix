@@ -139,13 +139,39 @@ class DetectorAdapter:
             torch.cuda.synchronize()
         started = time.perf_counter()
         with torch.inference_mode():
-            logits = self._model(**inputs).logits
+            outputs = self._model(**inputs, output_attentions=True)
+            logits = outputs.logits
+            attentions = outputs.attentions
         if device.type == "cuda":
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - started
 
         logit = float(logits.detach().float().cpu().reshape(-1)[0])
         fake_probability = float(torch.sigmoid(torch.tensor(logit)))
+
+        attn_metrics = {}
+        if attentions is not None and len(attentions) > 0:
+            try:
+                last_layer = attentions[-1].detach().float().cpu()
+                mean_heads = last_layer.mean(dim=1)[0]
+                cls_to_patches = mean_heads[0, 1:]
+                # normalize
+                cls_to_patches = cls_to_patches / (cls_to_patches.sum() + 1e-9)
+                entropy = float(-(cls_to_patches * torch.log(cls_to_patches + 1e-9)).sum())
+                attn_metrics = {
+                    "mean_cls_attention": float(cls_to_patches.mean()),
+                    "max_cls_attention": float(cls_to_patches.max()),
+                    "attention_entropy": entropy,
+                }
+            except Exception:
+                pass
+
+        explainability_data = {
+            "status": "available" if attn_metrics else "unavailable",
+            "kind": "attention_rollout",
+            "artifact": None,
+            "metrics": attn_metrics,
+        }
 
         return ModelOutput(
             model_id=self._config.model_id,
@@ -162,6 +188,7 @@ class DetectorAdapter:
             ],
             device=device_name,
             duration_seconds=round(elapsed, 6),
+            explainability=explainability_data,
         )
 
     def infer(self, image: Image.Image) -> ModelOutput:

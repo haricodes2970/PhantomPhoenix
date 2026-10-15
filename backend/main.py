@@ -198,8 +198,15 @@ async def create_scan(
     )
     verdict = assessment.verdict
 
-    # Placeholder explainability (future: saliency heatmap)
-    explainability = Explainability()
+    # Populate explainability from model output if available
+    primary_model = next((m for m in models if m.role == "primary"), None)
+    exp_data = primary_model.explainability if primary_model and primary_model.explainability else {}
+    explainability = Explainability(
+        status=exp_data.get("status", "unavailable"),
+        kind=exp_data.get("kind", "attention_rollout"),
+        artifact=exp_data.get("artifact"),
+        metrics=exp_data.get("metrics", {}),
+    )
 
     result = ScanResult(
         scan_id=scan_id,

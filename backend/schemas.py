@@ -49,6 +49,7 @@ class ModelOutput(BaseModel):
     limitations: list[str] = Field(default_factory=list)
     device: str | None = None
     duration_seconds: float | None = None
+    explainability: dict[str, Any] | None = None
 
 
 class Indicator(BaseModel):
@@ -63,11 +64,12 @@ class Indicator(BaseModel):
 
 
 class Explainability(BaseModel):
-    """Explainability artifact (placeholder)."""
+    """Explainability artifact / attention analysis."""
 
     status: str = "unavailable"
     kind: str | None = None
     artifact: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class Verdict(BaseModel):
