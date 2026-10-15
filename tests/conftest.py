@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -41,7 +42,7 @@ def mock_db_session() -> AsyncMock:
 @pytest.fixture(autouse=True)
 def override_db_session_for_unit_tests(request, mock_db_session: AsyncMock) -> Generator[None, None, None]:
     """Override database session for non-database integration tests."""
-    if "test_database.py" not in str(request.path):
+    if "test_database.py" not in str(request.path) and "test_e2e_flow.py" not in str(request.path) and not os.environ.get("RUN_DB_TESTS"):
         app.dependency_overrides[get_session] = lambda: mock_db_session
         yield
         app.dependency_overrides.pop(get_session, None)
