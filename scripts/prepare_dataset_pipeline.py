@@ -29,7 +29,7 @@ def main() -> None:
     parser.add_argument("--dataset-name", type=str, default="ComplexDataLab/OpenFake", help="Hugging Face dataset name")
     parser.add_argument("--dataset-config", type=str, default="core", help="Dataset configuration")
     parser.add_argument("--dataset-split", type=str, default="test", help="Dataset split")
-    parser.add_argument("--output-dir", type=Path, Path="datasets", help="Root dataset directory")
+    parser.add_argument("--output-dir", type=Path, default=Path("datasets"), help="Root dataset directory")
     args = parser.parse_args()
 
     output_dir: Path = Path(args.output_dir)
