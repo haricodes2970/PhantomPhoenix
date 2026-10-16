@@ -20,6 +20,63 @@ def compute_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def validate_existing_dataset(manifest_path: Path, output_dir: Path, target_real: int, target_ai: int) -> tuple[bool, int, int]:
+    """Validate existing dataset manifest and files before considering early exit.
+
+    Returns:
+        (is_complete_and_valid, real_count, ai_count)
+    """
+    if not manifest_path.is_file():
+        return False, 0, 0
+
+    rows = []
+    try:
+        with manifest_path.open("r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+    except Exception:
+        return False, 0, 0
+
+    real_count = 0
+    ai_count = 0
+    seen_hashes: set[str] = set()
+
+    for row in rows:
+        label = row.get("label", "").strip()
+        if label not in ("real", "ai_generated"):
+            return False, 0, 0
+
+        h = row.get("sha256", "")
+        if not h or h in seen_hashes:
+            return False, 0, 0
+        seen_hashes.add(h)
+
+        rel = row.get("relative_path", "")
+        if not rel:
+            return False, 0, 0
+
+        img_path = output_dir / rel
+        if not img_path.is_file():
+            return False, 0, 0
+
+        # Verify hash match (fast and robust integrity check)
+        try:
+            file_bytes = img_path.read_bytes()
+            if hashlib.sha256(file_bytes).hexdigest() != h:
+                return False, 0, 0
+        except Exception:
+            return False, 0, 0
+
+        if label == "real":
+            real_count += 1
+        elif label == "ai_generated":
+            ai_count += 1
+
+    is_met = (real_count >= target_real and ai_count >= target_ai)
+    return is_met, real_count, ai_count
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare PHANTOM PHOENIX research dataset (1,000 images).")
     parser.add_argument("--target-real", type=int, default=500, help="Target number of real photographs (default: 500)")
@@ -48,6 +105,13 @@ def main() -> None:
     readme_path = output_dir / "README.md"
 
     random.seed(args.seed)
+
+    # Safe early exit check before initializing dataset stream
+    is_complete, real_c, ai_c = validate_existing_dataset(manifest_path, output_dir, args.target_real, args.target_ai)
+    if is_complete:
+        print(f"Dataset already satisfies targets (real: {real_c}/{args.target_real}, ai: {ai_c}/{args.target_ai}).")
+        print("Manifest and files successfully validated. Skipping network acquisition and exiting successfully.")
+        sys.exit(0)
 
     print(f"Streaming {args.dataset_name} ({args.dataset_config}/{args.dataset_split})...")
     try:
