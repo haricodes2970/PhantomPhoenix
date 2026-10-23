@@ -75,3 +75,12 @@ export interface ScanItem {
   input: InputDetails;
   verdict: Verdict;
 }
+
+export interface HealthResponse {
+  status: string;
+  api_version: string;
+  detector_loaded: boolean;
+  detector_model_id: string | null;
+  cuda_available: boolean;
+  gpu_name: string | null;
+}

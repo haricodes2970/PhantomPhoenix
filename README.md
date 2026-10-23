@@ -122,15 +122,15 @@ RUN_DB_TESTS=1 .venv/bin/python -m pytest tests/test_database.py -v
 - **Benchmark accuracy**: ~75% mean, but drops to ~35-42% on newest commercial generators
 - **No localization**: Image-level only, no pixel-level forgery maps
 - **No generator attribution**: Output is binary (AI vs real) probability
-- **Provisional thresholds**: 0.80/0.20 are screening thresholds, not calibrated forensic certainty
+- **Provisional thresholds**: `fake_probability >= 0.80` → likely AI; `<= 0.05` → likely real; intermediate values are inconclusive. These are screening thresholds, not calibrated forensic certainty.
 
 ## Verdict Policy
 
 | Fake Probability | Verdict | Risk |
 |------------------|---------|------|
 | ≥ 0.80 | `LIKELY_AI` | `high` |
-| ≤ 0.20 | `LIKELY_REAL` | `low` |
-| 0.20 - 0.80 | `INCONCLUSIVE` | `moderate` |
+| ≤ 0.05 | `LIKELY_REAL` | `low` |
+| 0.05 - 0.80 | `INCONCLUSIVE` | `moderate` |
 | Detector error | `ANALYSIS_FAILED` | `unknown` |
 
 **These are provisional screening thresholds, not calibrated forensic certainty.**  
@@ -139,12 +139,25 @@ Detector errors never produce `LIKELY_REAL`. Missing metadata is not evidence of
 ## Security
 
 - File validation by decode (not extension/MIME)
-- Max 15 MiB, 8192 px per side
+- Max 5 MiB, 8192 px per side
 - SHA-256 content addressing
 - UUID scan IDs (no client filenames on disk)
 - Controlled local artifact storage (`uploads/artifacts/{scan_id}/`)
 - CORS restricted to dev origins
 - No secrets in repository (use `.env`)
+
+## Team collaboration workflow
+
+Use the following workflow for future changes:
+
+1. Create an issue describing the change.
+2. Create a feature branch from `main`.
+3. Implement the change with tests and documentation.
+4. Run backend tests and the frontend production build.
+5. Push the feature branch and open a pull request.
+6. Request review, address feedback, then merge to `main`.
+
+Do not push unreviewed feature work directly to `main`. Configure local secrets in `.env`; never commit `.env`, credentials, private keys, datasets, model checkpoints, logs, or runtime uploads.
 
 ## License
 

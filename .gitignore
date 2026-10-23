@@ -30,3 +30,6 @@ datasets/
 # OS
 .DS_Store
 Thumbs.db
+
+# Verified backup artifacts (M14) — never commit dumps/sidecars
+backups/
