@@ -1,0 +1,234 @@
+"""Test configuration and fixtures."""
+
+from __future__ import annotations
+
+import io
+import os
+from typing import Generator
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.database import get_session
+from backend.detector import DetectorAdapter
+from backend.main import app, get_detector_dependency
+from backend.models import Scan
+from backend.schemas import ModelOutput, VerdictLabel, RiskLevel
+
+
+@pytest.fixture
+def client() -> TestClient:
+    """FastAPI test client."""
+    return TestClient(app)
+
+
+TEST_SIGNING_SECRET = "unit-test-signing-secret-0000000000000000"
+TEST_USER_ID = "aaaaaaaa-1111-2222-3333-444444444444"
+TEST_ADMIN_ID = "aaaaaaaa-1111-2222-3333-444444444445"
+
+
+@pytest.fixture(autouse=True)
+def default_auth(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Enable auth config + default authenticated user for legacy tests.
+
+    Legacy tests run as an ordinary authenticated user via a dependency
+    override of get_current_user (route-level authorization code still runs).
+    Security tests (tests/test_auth_security.py) pop this override to exercise
+    the REAL token validation dependency.
+    """
+    from backend.config import settings
+    from backend.auth import RequestIdentity, get_current_user
+    import backend.rate_limit as rl
+
+    monkeypatch.setattr(settings, "auth_secret", TEST_SIGNING_SECRET)
+
+    # isolate rate limiter state between tests
+    rl.limiter._events.clear()
+
+    identity = RequestIdentity(user_id=TEST_USER_ID, username="test-user", role="user")
+    app.dependency_overrides[get_current_user] = lambda: identity
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def mock_db_session() -> AsyncMock:
+    """Create a mocked async database session."""
+    session = AsyncMock(spec=AsyncSession)
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.close = AsyncMock()
+    session.flush = AsyncMock()
+    session.refresh = AsyncMock()
+    session.execute = AsyncMock()
+    session.add = MagicMock()
+    return session
+
+
+@pytest.fixture(autouse=True)
+def override_db_session_for_unit_tests(request, mock_db_session: AsyncMock) -> Generator[None, None, None]:
+    """Override database session for non-database integration tests."""
+    if "test_database.py" not in str(request.path) and "test_e2e_flow.py" not in str(request.path) and not os.environ.get("RUN_DB_TESTS"):
+        app.dependency_overrides[get_session] = lambda: mock_db_session
+        yield
+        app.dependency_overrides.pop(get_session, None)
+    else:
+        yield
+
+
+@pytest.fixture
+def mock_detector(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Create a mocked detector adapter."""
+    mock = MagicMock(spec=DetectorAdapter)
+
+    # Mock health_info
+    mock.health_info.return_value = {
+        "detector_loaded": True,
+        "detector_configured": True,
+        "detector_model_id": "buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        "cuda_available": True,
+        "gpu_name": "NVIDIA RTX 3050",
+        "load_error": None,
+    }
+
+    # Mock infer - default returns a fake probability of 0.01 (LIKELY_REAL with threshold 0.05)
+    mock.infer.return_value = ModelOutput(
+        model_id="buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        model_revision="buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        role="primary",
+        status="ok",
+        fake_probability=0.01,
+        raw_logit=-4.595,
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
+        limitations=["Not calibrated on images from this deployment"],
+        device="cpu",
+        duration_seconds=0.1,
+    )
+
+    # Replace the get_detector_dependency
+    app.dependency_overrides[get_detector_dependency] = lambda: mock
+
+    yield mock
+
+    # Cleanup
+    app.dependency_overrides.pop(get_detector_dependency, None)
+
+
+@pytest.fixture
+def mock_detector_high_score(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Mocked detector returning high fake probability (LIKELY_AI)."""
+    mock = MagicMock(spec=DetectorAdapter)
+
+    mock.health_info.return_value = {
+        "detector_loaded": True,
+        "detector_configured": True,
+        "detector_model_id": "buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        "cuda_available": True,
+        "gpu_name": "NVIDIA RTX 3050",
+        "load_error": None,
+    }
+
+    mock.infer.return_value = ModelOutput(
+        model_id="buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        model_revision="buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        role="primary",
+        status="ok",
+        fake_probability=0.95,
+        raw_logit=2.944,
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
+        limitations=["Not calibrated on images from this deployment"],
+        device="cpu",
+        duration_seconds=0.1,
+    )
+
+    app.dependency_overrides[get_detector_dependency] = lambda: mock
+
+    yield mock
+
+    app.dependency_overrides.pop(get_detector_dependency, None)
+
+
+@pytest.fixture
+def mock_detector_mid_score(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Mocked detector returning mid-range probability (INCONCLUSIVE)."""
+    mock = MagicMock(spec=DetectorAdapter)
+
+    mock.health_info.return_value = {
+        "detector_loaded": True,
+        "detector_configured": True,
+        "detector_model_id": "buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        "cuda_available": True,
+        "gpu_name": "NVIDIA RTX 3050",
+        "load_error": None,
+    }
+
+    mock.infer.return_value = ModelOutput(
+        model_id="buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        model_revision="buildborderless/CommunityForensics-DeepfakeDet-ViT",
+        role="primary",
+        status="ok",
+        fake_probability=0.5,
+        raw_logit=0.0,
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
+        limitations=["Not calibrated on images from this deployment"],
+        device="cpu",
+        duration_seconds=0.1,
+    )
+
+    app.dependency_overrides[get_detector_dependency] = lambda: mock
+
+    yield mock
+
+    app.dependency_overrides.pop(get_detector_dependency, None)
+
+
+@pytest.fixture
+def mock_detector_error(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Mocked detector that raises an inference error."""
+    from backend.detector import InferenceError
+
+    mock = MagicMock(spec=DetectorAdapter)
+
+    mock.health_info.return_value = {
+        "detector_loaded": False,
+        "detector_configured": False,
+        "detector_model_id": None,
+        "cuda_available": True,
+        "gpu_name": "NVIDIA RTX 3050",
+        "load_error": "Model load failed",
+    }
+
+    mock.infer.side_effect = InferenceError("Model failed to load")
+
+    app.dependency_overrides[get_detector_dependency] = lambda: mock
+
+    yield mock
+
+    app.dependency_overrides.pop(get_detector_dependency, None)
+
+
+def create_test_image(
+    width: int = 512,
+    height: int = 512,
+    color: tuple[int, int, int] = (128, 128, 128),
+    format: str = "JPEG",
+) -> io.BytesIO:
+    """Create a test image in memory."""
+    img = Image.new("RGB", (width, height), color)
+    buf = io.BytesIO()
+    img.save(buf, format=format)
+    buf.seek(0)
+    return buf
+
+
+def create_test_image_bytes(
+    width: int = 512,
+    height: int = 512,
+    color: tuple[int, int, int] = (128, 128, 128),
+    format: str = "JPEG",
+) -> bytes:
+    """Create test image bytes."""
+    return create_test_image(width, height, color, format).getvalue()

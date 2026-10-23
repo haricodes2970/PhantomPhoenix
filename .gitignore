@@ -1,0 +1,35 @@
+# Python environment and package caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model weights and Hugging Face caches
+models/
+.cache/
+**/.hf-cache/
+
+# Local evidence and generated artifacts
+data/
+uploads/
+datasets/
+*.log
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Verified backup artifacts (M14) — never commit dumps/sidecars
+backups/

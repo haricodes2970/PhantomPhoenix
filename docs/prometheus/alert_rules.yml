@@ -1,0 +1,76 @@
+# PHANTOM PHOENIX — Prometheus alert rules
+#
+# VALIDATION STATUS: syntax checked and metric names matched against the real
+# /api/metrics exposition, but NO live Prometheus/Alertmanager is configured in
+# this repository. Alert delivery, routing, and firing behavior are UNVERIFIED.
+# These rules require a Prometheus server that scrapes the backend /api/metrics
+# endpoint and an Alertmanager for delivery.
+#
+# Assumptions:
+# - Metrics are process-local; with N backend replicas, rates are summed across
+#   scrape targets (prometheus "sum by (...)" is used where relevant).
+# - database_connectivity_up is a gauge refreshed on every /api/readiness check.
+#   Absence of recent readiness scrapes also means DB state is unknown; the
+#   "up == 0" alert covers observed-down, not unknown.
+# - Transient single-event failures do not alert; every rule requires a `for`
+#   duration.
+
+groups:
+  - name: phantom_phoenix_alerts
+    rules:
+      - alert: PhantomPhoenixHighErrorRate
+        expr: >-
+          sum by (route) (rate(http_requests_total{status_class="5xx"}[5m]))
+          /
+          sum by (route) (rate(http_requests_total[5m]))
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP 5xx error rate detected"
+          description: "More than 5% of API requests return 5xx for over 2 minutes (per route)."
+
+      - alert: PhantomPhoenixHighLatency
+        expr: >-
+          sum by (route) (rate(http_request_duration_seconds_sum[5m]))
+          /
+          sum by (route) (rate(http_request_duration_seconds_count[5m]))
+          > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained high API latency"
+          description: "Mean request latency exceeds 2s for over 5 minutes (per route)."
+
+      - alert: PhantomPhoenixDatabaseDown
+        expr: max_over_time(database_connectivity_up[1m]) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database connectivity failure"
+          description: "Readiness probe reports database unreachable for over 1 minute."
+
+      - alert: PhantomPhoenixDetectorInferenceFailures
+        expr: >-
+          sum(rate(detector_inference_total{status="failure"}[5m]))
+          /
+          sum(rate(detector_inference_total[5m]))
+          > 0.2
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated AI detector inference failure rate"
+          description: "More than 20% of detector inferences fail over a sustained 3-minute window."
+
+      - alert: PhantomPhoenixServiceDown
+        expr: up{job="phantom_phoenix"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PHANTOM PHOENIX backend unreachable"
+          description: "Prometheus cannot scrape the backend metrics endpoint (service down or restarting repeatedly)."
