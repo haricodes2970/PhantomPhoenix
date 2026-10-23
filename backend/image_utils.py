@@ -52,14 +52,14 @@ def validate_and_decode(file: BinaryIO, filename: str, content_type: str | None)
     Enforces size and dimension limits.
     Returns validated image with SHA-256 and metadata.
     """
-    # Read entire file into memory for validation (max 15MB)
-    max_bytes = settings.max_image_size_mb * 1024 * 1024
+    # Read entire file into memory for validation (max 5 MiB = 5,242,880 bytes)
+    max_bytes = 5 * 1024 * 1024  # 5,242,880 bytes
     data = file.read(max_bytes + 1)
 
     if len(data) > max_bytes:
         raise ImageValidationError(
             code="FILE_TOO_LARGE",
-            message=f"File exceeds maximum size of {settings.max_image_size_mb} MiB",
+            message="File exceeds the maximum allowed size of 5 MiB.",
             detail=f"Received {len(data)} bytes, limit is {max_bytes} bytes",
         )
 

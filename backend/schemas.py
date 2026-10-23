@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal
 
 
 class ScanStatus(str, Enum):
@@ -45,7 +46,7 @@ class ModelOutput(BaseModel):
     status: str = "ok"  # ok, unavailable, error
     fake_probability: float | None = None
     raw_logit: float | None = None
-    threshold_policy: str = "0.80 likely_ai / 0.20 likely_real"
+    threshold_policy: str = "0.80 likely_ai / 0.05 likely_real"
     limitations: list[str] = Field(default_factory=list)
     device: str | None = None
     duration_seconds: float | None = None
@@ -118,6 +119,7 @@ class ScanResult(BaseModel):
     evidence_items: list[NormalizedEvidenceItem] = Field(default_factory=list)
     explainability: Explainability = Field(default_factory=Explainability)
     verdict: Verdict
+    investigator_report: InvestigatorEvidenceReport | None = None
     error: str | None = None
 
     model_config = ConfigDict(use_enum_values=True)
@@ -155,3 +157,116 @@ class ErrorResponse(BaseModel):
     """Standard error response."""
 
     error: ErrorDetail
+
+
+# =============================================================================
+# Six-Part Investigator Evidence Report Schemas (Milestone 2)
+# =============================================================================
+
+class FileIntegrityProvenance(BaseModel):
+    """Section 1: File Integrity and Provenance."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    sha256: str
+    original_filename: str
+    internal_identifier: str
+    file_format: str
+    dimensions: str  # "WIDTH x HEIGHT px"
+    file_size_bytes: int
+    exif_fields: dict[str, str] = Field(default_factory=dict)
+    xmp_present: bool = False
+    missing_metadata_observations: list[str] = Field(default_factory=list)
+    integrity_status: Literal["verified", "unverified", "corrupted"] = "verified"
+    provenance_status: Literal["established", "partial", "unknown"] = "unknown"
+    scan_id: str
+    analysis_timestamp_utc: str
+
+
+class SourceDiscovery(BaseModel):
+    """Section 2: Source Discovery."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    status: Literal["searched", "not_searched", "error"] = "not_searched"
+    candidate_urls: list[str] = Field(default_factory=list)
+    match_method: str | None = None
+    match_strength: Literal["exact", "near", "none", "unknown"] = "unknown"
+    supporting_evidence: list[str] = Field(default_factory=list)
+    publication_timestamps: list[str] = Field(default_factory=list)
+    earliest_known_source: bool = False
+    limitations: list[str] = Field(default_factory=list)
+
+
+class PublisherIntelligence(BaseModel):
+    """Section 3: Publisher and Account Intelligence."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    status: Literal["identified", "unknown", "not_searched", "error"] = "unknown"
+    account_name: str | None = None
+    source_url: str | None = None
+    relationship: str | None = None  # uploader, creator, distributor, unknown
+    verification_status: Literal["verified", "unverified", "disputed", "unknown"] = "unknown"
+    limitations: list[str] = Field(default_factory=list)
+
+
+class GeneratorAttribution(BaseModel):
+    """Section 4: Generator and Editing Attribution."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    status: Literal["ok", "unsupported", "error"] = "unsupported"
+    method: Literal["model_inference", "provenance", "unknown"] = "unknown"
+    candidates: list[dict[str, Any]] = Field(default_factory=list)  # family, confidence, evidence_type
+    limitations: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class ExternalInvestigationEvidence(BaseModel):
+    """Section 5: External Investigation Evidence."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    status: Literal["available", "not_available", "not_authorized", "error"] = "not_available"
+    platform_records: list[dict[str, Any]] = Field(default_factory=list)
+    publication_timestamps: list[str] = Field(default_factory=list)
+    public_urls: list[str] = Field(default_factory=list)
+    account_records: list[dict[str, Any]] = Field(default_factory=list)
+    network_audit_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    source: str | None = None
+    retrieval_time_utc: str | None = None
+    access_limitations: list[str] = Field(default_factory=list)
+    verification_status: Literal["verified", "unverified", "unknown"] = "unknown"
+
+
+class EvidencePreservation(BaseModel):
+    """Section 6: Evidence Preservation and Corroboration."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    original_file_hash: str
+    scan_identifier: str
+    analysis_timestamp_utc: str
+    detector_version: str
+    forensic_versions: dict[str, str] = Field(default_factory=dict)
+    supporting_observations: list[str] = Field(default_factory=list)
+    artifact_references: list[str] = Field(default_factory=list)
+    evidence_relationships: list[str] = Field(default_factory=list)
+    audit_events: list[dict[str, Any]] = Field(default_factory=list)
+    integrity_checks: list[str] = Field(default_factory=list)
+    corroboration_status: Literal["corroborated", "partial", "unverified", "contradicted"] = "unverified"
+    outstanding_questions: list[str] = Field(default_factory=list)
+
+
+class InvestigatorEvidenceReport(BaseModel):
+    """Complete six-part investigator evidence report."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    section_1_file_integrity: FileIntegrityProvenance
+    section_2_source_discovery: SourceDiscovery
+    section_3_publisher_intelligence: PublisherIntelligence
+    section_4_generator_attribution: GeneratorAttribution
+    section_5_external_evidence: ExternalInvestigationEvidence
+    section_6_evidence_preservation: EvidencePreservation

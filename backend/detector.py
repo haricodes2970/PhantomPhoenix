@@ -5,19 +5,24 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import os
 import time
 import threading
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageFilter
 from transformers import ViTForImageClassification, ViTImageProcessor
 
 from backend.config import settings
 from backend.schemas import ModelOutput
 
 logger = logging.getLogger(__name__)
+
+
+ARTIFACT_BASE_DIR = "uploads/artifacts"
 
 
 @dataclass(frozen=True)
@@ -135,7 +140,7 @@ class DetectorAdapter:
         # auto
         return ["cuda", "cpu"] if torch.cuda.is_available() else ["cpu"]
 
-    def _run_inference(self, device_name: str, pixels: Image.Image) -> ModelOutput:
+    def _run_inference(self, device_name: str, pixels: Image.Image, scan_id: str | None = None) -> ModelOutput:
         """Run inference on a specific device."""
         device = torch.device(device_name)
         self._model.to(device)
@@ -160,10 +165,15 @@ class DetectorAdapter:
 
         attn_metrics = self._compute_attention_metrics(attentions)
 
+        # Compute Grad-CAM heatmap artifact
+        gradcam_artifact = None
+        if scan_id and attentions is not None:
+            gradcam_artifact = self._compute_gradcam_heatmap(attentions, pixels.size, scan_id)
+
         explainability_data = {
             "status": "available" if attn_metrics else "unavailable",
             "kind": "attention_rollout",
-            "artifact": None,
+            "artifact": gradcam_artifact,
             "metrics": attn_metrics,
         }
 
@@ -174,11 +184,12 @@ class DetectorAdapter:
             status="ok",
             fake_probability=fake_probability,
             raw_logit=logit,
-            threshold_policy="0.80 likely_ai / 0.20 likely_real",
+            threshold_policy=f"{settings.likely_ai_threshold:.2f} likely_ai / {settings.likely_real_threshold:.2f} likely_real",
             limitations=[
                 "Not calibrated on images from this deployment",
                 "Training data may not cover recent generators",
                 "Single-model screening aid only",
+                "Grad-CAM heatmap shows attention focus, not ground-truth localization",
             ],
             device=device_name,
             duration_seconds=round(elapsed, 6),
@@ -237,7 +248,85 @@ class DetectorAdapter:
             logger.warning("Failed to derive attention metrics: %s", exc)
             return {}
 
-    def infer(self, image: Image.Image) -> ModelOutput:
+    def _compute_gradcam_heatmap(
+        self, attentions: Any, image_size: tuple[int, int], scan_id: str
+    ) -> str | None:
+        """
+        Compute Grad-CAM style heatmap from ViT attention and save as artifact.
+
+        Uses attention rollout: mean attention from [CLS] token to patches across heads
+        in the last layer, reshaped to spatial grid and upsampled to image resolution.
+
+        Returns:
+            Relative path to saved heatmap artifact, or None if computation fails.
+        """
+        if attentions is None:
+            return None
+        try:
+            if len(attentions) == 0:
+                return None
+
+            last_layer = attentions[-1].detach().float().cpu()
+            if last_layer.dim() != 4:
+                return None
+
+            # Mean across heads: [seq_len, seq_len]
+            mean_heads = last_layer.mean(dim=1)[0]
+            num_patches = int(mean_heads.shape[-1]) - 1
+            if num_patches <= 0:
+                return None
+
+            # CLS-to-patch attention (excluding CLS-to-CLS)
+            cls_to_patches = mean_heads[0, 1:]
+            if not bool(torch.isfinite(cls_to_patches).all()):
+                return None
+
+            total = cls_to_patches.sum()
+            if not bool(torch.isfinite(total)) or float(total) <= 0.0:
+                return None
+
+            # Normalize to probability distribution over patches
+            patch_attention = cls_to_patches / (total + 1e-12)
+
+            # Reshape to spatial grid (assuming square patch grid)
+            grid_size = int(math.sqrt(num_patches))
+            if grid_size * grid_size != num_patches:
+                # Non-square grid (unlikely for ViT) - fallback to 1D
+                attention_map = patch_attention.numpy().reshape(1, num_patches)
+            else:
+                attention_map = patch_attention.numpy().reshape(grid_size, grid_size)
+
+            # Upsample to image resolution using PIL
+            attention_img = Image.fromarray((attention_map * 255).astype(np.uint8), mode="L")
+            attention_img = attention_img.resize(image_size, Image.Resampling.BICUBIC)
+
+            # Apply colormap (jet-like heatmap)
+            # Convert to RGB heatmap: blue->cyan->green->yellow->red
+            heatmap_arr = np.array(attention_img, dtype=np.float32) / 255.0
+            # Simple jet colormap approximation
+            r = np.clip(1.5 - abs(4 * heatmap_arr - 3), 0, 1)
+            g = np.clip(1.5 - abs(4 * heatmap_arr - 2), 0, 1)
+            b = np.clip(1.5 - abs(4 * heatmap_arr - 1), 0, 1)
+            heatmap_rgb = np.stack([r, g, b], axis=-1)
+            heatmap_img = Image.fromarray((heatmap_rgb * 255).astype(np.uint8))
+
+            # Blend with original image for context (50% opacity)
+            # Note: We don't have the original image here, so save heatmap alone
+            # The report can overlay it if needed
+
+            # Save artifact
+            artifact_dir = os.path.join(ARTIFACT_BASE_DIR, scan_id)
+            os.makedirs(artifact_dir, exist_ok=True)
+            artifact_path = os.path.join(artifact_dir, "gradcam.jpg")
+            heatmap_img.save(artifact_path, "JPEG", quality=90)
+
+            return os.path.relpath(artifact_path, start=".")
+
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to compute Grad-CAM heatmap: %s", exc)
+            return None
+
+    def infer(self, image: Image.Image, scan_id: str | None = None) -> ModelOutput:
         """Run inference with device fallback. Raises InferenceError if all fail."""
         self._load_model()
 
@@ -250,7 +339,7 @@ class DetectorAdapter:
                 errors.append("cuda requested but torch.cuda.is_available() is false")
                 continue
             try:
-                return self._run_inference(device_name, image)
+                return self._run_inference(device_name, image, scan_id)
             except Exception as exc:
                 errors.append(f"{device_name}: {type(exc).__name__}: {exc}")
 

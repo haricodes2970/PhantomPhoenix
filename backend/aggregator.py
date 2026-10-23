@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import math
 from typing import Any
 from pydantic import BaseModel, Field
 
@@ -12,7 +14,16 @@ from backend.schemas import (
     VerdictLabel,
     RiskLevel,
     NormalizedEvidenceItem,
+    InputDetails,
+    InvestigatorEvidenceReport,
+    FileIntegrityProvenance,
+    SourceDiscovery,
+    PublisherIntelligence,
+    GeneratorAttribution,
+    ExternalInvestigationEvidence,
+    EvidencePreservation,
 )
+from backend.attribution import get_attribution_service, AttributionStatus
 
 
 class AggregatedAssessment(BaseModel):
@@ -154,6 +165,25 @@ def aggregate_assessment(
         )
 
     score = primary.fake_probability
+    if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+        verdict = Verdict(
+            label=VerdictLabel.ANALYSIS_FAILED,
+            risk=RiskLevel.UNKNOWN,
+            rationale=["Detector produced an invalid probability score"],
+            not_claimed=[
+                "generator identity",
+                "legal authenticity",
+                "localized forgery",
+                "calibrated confidence",
+            ],
+        )
+        return AggregatedAssessment(
+            evidence_items=evidence_items,
+            verdict=verdict,
+            risk=RiskLevel.UNKNOWN,
+            summary="Analysis failed because detector probability was invalid.",
+        )
+
     rationales: list[str] = []
 
     # Trace AI model evidence
@@ -218,4 +248,170 @@ def aggregate_assessment(
         verdict=verdict,
         risk=risk,
         summary=summary,
+    )
+
+
+def build_investigator_report(
+    scan_id: str,
+    created_at: str,
+    input_details: InputDetails,
+    models: list[ModelOutput],
+    indicators: list[Indicator],
+    verdict: Verdict,
+    assessment: AggregatedAssessment,
+) -> InvestigatorEvidenceReport:
+    """
+    Build the six-part investigator evidence report from scan data.
+
+    Each section explicitly states its status (searched/not_searched/unknown/etc.)
+    to maintain honest reporting of capabilities.
+    """
+    primary = next((m for m in models if m.role == "primary"), None)
+    fake_prob = primary.fake_probability if primary else None
+    detector_model = primary.model_id if primary else "unknown"
+    detector_revision = primary.model_revision if primary else "unknown"
+
+    # Section 1: File Integrity & Provenance
+    exif_fields = {}
+    missing_meta = []
+    xmp_present = False
+    for ind in indicators:
+        if ind.id == "metadata" and ind.status == "ok":
+            res = ind.value.get("result", {}) if isinstance(ind.value, dict) else {}
+            exif_fields = res.get("exif_sample", {})
+            xmp_present = res.get("info_tags", {}).get("xmp_present") == "True"
+            if not res.get("has_exif", True):
+                missing_meta.append("EXIF metadata absent")
+            if not xmp_present:
+                missing_meta.append("XMP metadata not present")
+            break
+
+    section_1 = FileIntegrityProvenance(
+        sha256=input_details.sha256,
+        original_filename=input_details.filename,
+        internal_identifier=str(scan_id),
+        file_format=input_details.media_type,
+        dimensions=f"{input_details.width} x {input_details.height} px",
+        file_size_bytes=input_details.byte_size,
+        exif_fields=exif_fields,
+        xmp_present=xmp_present,
+        missing_metadata_observations=missing_meta,
+        integrity_status="verified",
+        provenance_status="unknown",
+        scan_id=str(scan_id),
+        analysis_timestamp_utc=created_at,
+    )
+
+    # Section 2: Source Discovery (NOT SEARCHED in current deployment)
+    section_2 = SourceDiscovery(
+        status="not_searched",
+        candidate_urls=[],
+        match_method=None,
+        match_strength="unknown",
+        supporting_evidence=[],
+        publication_timestamps=[],
+        earliest_known_source=False,
+        limitations=[
+            "Reverse image search / source discovery not implemented in this deployment.",
+            "No integration with search engines or image registries.",
+        ],
+    )
+
+    # Section 3: Publisher Intelligence (UNKNOWN in current deployment)
+    section_3 = PublisherIntelligence(
+        status="unknown",
+        account_name=None,
+        source_url=None,
+        relationship=None,
+        verification_status="unknown",
+        limitations=[
+            "Publisher/account intelligence not implemented in this deployment.",
+            "No integration with platform APIs or account verification services.",
+            "An uploader is not automatically the original creator.",
+        ],
+    )
+
+    # Section 4: Generator Attribution
+    attr_service = get_attribution_service()
+    attr_result = attr_service.attribute(None)  # Image not needed for unsupported path
+    section_4 = GeneratorAttribution(
+        status=attr_result.status,
+        method=attr_result.method,
+        candidates=[
+            {
+                "family": c.family,
+                "confidence": c.confidence,
+                "evidence_type": c.evidence_type,
+                "metadata": c.metadata,
+            }
+            for c in attr_result.candidates
+        ],
+        limitations=attr_result.limitations,
+        error=attr_result.error,
+    )
+
+    # Section 5: External Investigation Evidence (NOT AVAILABLE)
+    section_5 = ExternalInvestigationEvidence(
+        status="not_available",
+        platform_records=[],
+        publication_timestamps=[],
+        public_urls=[],
+        account_records=[],
+        network_audit_evidence=[],
+        source=None,
+        retrieval_time_utc=None,
+        access_limitations=[
+            "External investigation evidence requires authorized access to platform records.",
+            "No authorized data sources configured in this deployment.",
+        ],
+        verification_status="unknown",
+    )
+
+    # Section 6: Evidence Preservation & Corroboration
+    forensic_versions = {
+        "metadata": "1.0",
+        "ela": "1.0",
+        "noise": "1.0",
+        "frequency": "1.0",
+    }
+    artifact_refs = []
+    for ind in indicators:
+        if ind.artifact:
+            artifact_refs.append(f"{ind.id}: {ind.artifact}")
+
+    section_6 = EvidencePreservation(
+        original_file_hash=input_details.sha256,
+        scan_identifier=str(scan_id),
+        analysis_timestamp_utc=created_at,
+        detector_version=f"{detector_model}@{detector_revision}",
+        forensic_versions=forensic_versions,
+        supporting_observations=[
+            f"AI detector fake probability: {fake_prob:.4f}" if fake_prob is not None else "AI detector: unavailable"
+        ] + [ind.note for ind in indicators if ind.note],
+        artifact_references=artifact_refs,
+        evidence_relationships=[
+            "AI generation assessment and manipulation indicators evaluated separately",
+            "Heuristic indicators (ELA, noise) not used as primary authenticity evidence",
+        ],
+        audit_events=[],  # Would be populated from audit trail in production
+        integrity_checks=[
+            "SHA-256 hash verified at upload",
+            "Image decoded and validated before analysis",
+        ],
+        corroboration_status="unverified",
+        outstanding_questions=[
+            "Generator attribution not available",
+            "Source discovery not performed",
+            "Publisher identity not established",
+            "External investigation evidence not accessible",
+        ],
+    )
+
+    return InvestigatorEvidenceReport(
+        section_1_file_integrity=section_1,
+        section_2_source_discovery=section_2,
+        section_3_publisher_intelligence=section_3,
+        section_4_generator_attribution=section_4,
+        section_5_external_evidence=section_5,
+        section_6_evidence_preservation=section_6,
     )

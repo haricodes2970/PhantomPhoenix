@@ -6,11 +6,70 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Index, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base
+
+
+class User(Base):
+    """Authentication user (Milestone 12).
+
+    Passwords are stored ONLY as Argon2id hashes. Username is normalized to
+    lowercase at the application layer before persistence.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="user")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class AuditEvent(Base):
+    """Persistent security-audit trail (Milestone 14).
+
+    TRUST BOUNDARY (explicit): this is an application-auditable record store,
+    NOT a tamper-proof ledger — a database administrator can always modify the
+    underlying table. No ordinary-user application route reads or writes it;
+    there are no update/delete application routes.
+
+    Bounded, fixed-charset values only (validated in backend/audit.py): never
+    passwords, tokens, cookies, image bytes, raw bodies, TLS-level EXIF data,
+    or unbounded user input.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    # Actor reference; SET NULL so events survive user deletion.
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    actor_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    __table_args__ = (
+        Index("ix_audit_events_created_at_desc", created_at.desc()),
+    )
 
 
 class Scan(Base):
@@ -57,6 +116,12 @@ class Scan(Base):
 
     # Error info (if any)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Ownership (nullable: legacy scans created before Milestone 12 have no owner;
+    # unowned scans are administrator-accessible only — see backend/auth.py policy)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Full structured result for exact API compatibility
     full_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

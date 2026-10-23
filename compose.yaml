@@ -1,7 +1,6 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: phantom-phoenix-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-phantom}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-phantom}
@@ -16,5 +15,51 @@ services:
       timeout: 3s
       retries: 10
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-phantom}:${POSTGRES_PASSWORD:-phantom}@postgres:5432/${POSTGRES_DB:-phantom_phoenix}
+      - HOST=0.0.0.0
+      - PORT=8000
+      # Authentication (Milestone 12): fail-closed when unset in .env
+      - AUTH_SECRET=${AUTH_SECRET:?AUTH_SECRET must be set in .env}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - RATE_LIMIT_LOGIN_PER_MINUTE=${RATE_LIMIT_LOGIN_PER_MINUTE:-5}
+      - RATE_LIMIT_SCAN_PER_MINUTE=${RATE_LIMIT_SCAN_PER_MINUTE:-10}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Readiness: DB reachable + detector configured. Uses python (no curl in
+      # python:3.12-slim). 503/failed exit marks container unhealthy.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/api/readiness',timeout=5); sys.exit(0 if r.status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - uploads_data:/app/uploads
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
+  uploads_data:

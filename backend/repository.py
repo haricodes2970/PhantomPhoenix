@@ -33,14 +33,28 @@ class ScanRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_scans(self, limit: int = 20, cursor: str | None = None) -> tuple[list[Scan], str | None]:
+    async def list_scans(
+        self,
+        limit: int = 20,
+        cursor: str | None = None,
+        owner_user_id: UUID | None = None,
+        include_unowned: bool = False,
+    ) -> tuple[list[Scan], str | None]:
         """
         List scans newest first with cursor-based pagination.
 
-        Returns (scans, next_cursor).
-        Cursor is ISO timestamp of the last item in the page.
+        Authorization scoping (Milestone 12):
+        - owner_user_id set -> only that user's scans (ordinary users)
+        - include_unowned=True -> all scans incl. legacy NULL-owner (admins)
         """
-        stmt = select(Scan).order_by(Scan.created_at.desc()).limit(limit + 1)
+        if owner_user_id is not None:
+            stmt = select(Scan).where(Scan.owner_user_id == owner_user_id)
+        elif include_unowned:
+            stmt = select(Scan)
+        else:
+            # No explicit scope -> legacy unowned scans still visible (DB tests use this)
+            stmt = select(Scan)
+        stmt = stmt.order_by(Scan.created_at.desc()).limit(limit + 1)
 
         if cursor:
             try:

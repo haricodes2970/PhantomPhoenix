@@ -256,7 +256,7 @@ def generate_scan_pdf(scan: Scan, artifact_base_dir: str = "uploads/artifacts") 
         story.append(Paragraph("No forensic evidence items recorded.", body_style))
     story.append(Spacer(1, 10))
 
-    # Forensic Artifact Visualizations (ELA, Noise, FFT)
+    # Forensic Artifact Visualizations (ELA, Noise, FFT, Grad-CAM)
     story.append(Paragraph("Forensic Artifact Visualizations", heading_style))
     artifact_flowables: list[any] = []
     
@@ -271,6 +271,18 @@ def generate_scan_pdf(scan: Scan, artifact_base_dir: str = "uploads/artifacts") 
                     artifact_flowables.append([img_flow, caption])
                 except Exception:
                     pass
+
+    # Also include Grad-CAM from explainability if available
+    explainability = result_data.get("explainability", {})
+    if explainability.get("artifact"):
+        art_path = Path(explainability["artifact"])
+        if art_path.is_file():
+            try:
+                img_flow = RLImage(str(art_path), width=2.0 * inch, height=2.0 * inch)
+                caption = Paragraph(f"<b>GRAD-CAM Artifact</b><br/><font size=7>ViT attention rollout heatmap</font>", muted_style)
+                artifact_flowables.append([img_flow, caption])
+            except Exception:
+                pass
 
     if artifact_flowables:
         # Arrange in pairs if possible
@@ -299,6 +311,17 @@ def generate_scan_pdf(scan: Scan, artifact_base_dir: str = "uploads/artifacts") 
         story.append(Paragraph("No visual forensic artifacts available for this scan.", body_style))
     story.append(Spacer(1, 15))
 
+    # Six-Part Investigator Evidence Report
+    story.append(HRFlowable(width="100%", thickness=1.5, color=accent_color, spaceAfter=10))
+    story.append(Paragraph("INVESTIGATOR EVIDENCE REPORT (Six-Part Structure)", heading_style))
+    story.append(Spacer(1, 6))
+
+    investigator_report = result_data.get("investigator_report")
+    if investigator_report:
+        render_investigator_report_sections(story, investigator_report, body_style, muted_style, heading_style, border_color, light_bg)
+    else:
+        story.append(Paragraph("Investigator evidence report not available for this scan.", body_style))
+
     # Screening Aid Disclaimer Footer
     story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=8))
     story.append(Paragraph(
@@ -312,3 +335,186 @@ def generate_scan_pdf(scan: Scan, artifact_base_dir: str = "uploads/artifacts") 
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+def render_investigator_report_sections(
+    story: list[Any],
+    report: dict[str, Any],
+    body_style: ParagraphStyle,
+    muted_style: ParagraphStyle,
+    heading_style: ParagraphStyle,
+    border_color: colors.Color,
+    light_bg: colors.Color,
+) -> None:
+    """Render all six sections of the investigator evidence report."""
+
+    def safe_text(val: Any) -> str:
+        """Convert value to safe string for Paragraph."""
+        if val is None:
+            return "N/A"
+        return str(val)
+
+    def section_heading(title: str) -> None:
+        story.append(Paragraph(title, heading_style))
+        story.append(Spacer(1, 4))
+
+    def key_value_table(data: list[list], col_widths: list[float]) -> None:
+        table = Table(data, colWidths=col_widths)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), light_bg),
+            ('BOX', (0, 0), (-1, -1), 0.5, border_color),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 8))
+
+    def bullet_list(items: list[str]) -> None:
+        if not items:
+            story.append(Paragraph("<i>None</i>", muted_style))
+        else:
+            for item in items:
+                story.append(Paragraph(f"• {safe_text(item)}", body_style))
+        story.append(Spacer(1, 4))
+
+    # Section 1: File Integrity & Provenance
+    section_heading("Section 1: File Integrity & Provenance")
+    s1 = report.get("section_1_file_integrity", {})
+    s1_data = [
+        [Paragraph("<b>SHA-256:</b>", body_style), Paragraph(f"<font size=7>{safe_text(s1.get('sha256'))}</font>", body_style)],
+        [Paragraph("<b>Original Filename:</b>", body_style), Paragraph(safe_text(s1.get('original_filename')), body_style)],
+        [Paragraph("<b>Internal Identifier:</b>", body_style), Paragraph(safe_text(s1.get('internal_identifier')), body_style)],
+        [Paragraph("<b>File Format:</b>", body_style), Paragraph(safe_text(s1.get('file_format')), body_style)],
+        [Paragraph("<b>Dimensions:</b>", body_style), Paragraph(safe_text(s1.get('dimensions')), body_style)],
+        [Paragraph("<b>File Size:</b>", body_style), Paragraph(f"{s1.get('file_size_bytes', 0):,} bytes", body_style)],
+        [Paragraph("<b>Integrity Status:</b>", body_style), Paragraph(safe_text(s1.get('integrity_status')), body_style)],
+        [Paragraph("<b>Provenance Status:</b>", body_style), Paragraph(safe_text(s1.get('provenance_status')), body_style)],
+        [Paragraph("<b>Scan ID:</b>", body_style), Paragraph(safe_text(s1.get('scan_id')), body_style)],
+        [Paragraph("<b>Analysis Timestamp (UTC):</b>", body_style), Paragraph(safe_text(s1.get('analysis_timestamp_utc')), body_style)],
+    ]
+    key_value_table(s1_data, [2.0 * inch, 5.0 * inch])
+
+    if s1.get('exif_fields'):
+        story.append(Paragraph("<b>EXIF Fields (sample):</b>", body_style))
+        for k, v in list(s1['exif_fields'].items())[:10]:
+            story.append(Paragraph(f"  {safe_text(k)}: {safe_text(v)}", muted_style))
+    if s1.get('missing_metadata_observations'):
+        story.append(Paragraph("<b>Missing Metadata Observations:</b>", body_style))
+        bullet_list(s1['missing_metadata_observations'])
+
+    # Section 2: Source Discovery
+    section_heading("Section 2: Source Discovery")
+    s2 = report.get("section_2_source_discovery", {})
+    s2_data = [
+        [Paragraph("<b>Status:</b>", body_style), Paragraph(safe_text(s2.get('status')).upper(), body_style)],
+        [Paragraph("<b>Match Method:</b>", body_style), Paragraph(safe_text(s2.get('match_method')), body_style)],
+        [Paragraph("<b>Match Strength:</b>", body_style), Paragraph(safe_text(s2.get('match_strength')), body_style)],
+        [Paragraph("<b>Earliest Known Source:</b>", body_style), Paragraph("Yes" if s2.get('earliest_known_source') else "No", body_style)],
+    ]
+    key_value_table(s2_data, [2.0 * inch, 5.0 * inch])
+    if s2.get('candidate_urls'):
+        story.append(Paragraph("<b>Candidate URLs:</b>", body_style))
+        bullet_list(s2['candidate_urls'])
+    if s2.get('supporting_evidence'):
+        story.append(Paragraph("<b>Supporting Evidence:</b>", body_style))
+        bullet_list(s2['supporting_evidence'])
+    if s2.get('limitations'):
+        story.append(Paragraph("<b>Limitations:</b>", body_style))
+        bullet_list(s2['limitations'])
+
+    # Section 3: Publisher Intelligence
+    section_heading("Section 3: Publisher & Account Intelligence")
+    s3 = report.get("section_3_publisher_intelligence", {})
+    s3_data = [
+        [Paragraph("<b>Status:</b>", body_style), Paragraph(safe_text(s3.get('status')).upper(), body_style)],
+        [Paragraph("<b>Account Name:</b>", body_style), Paragraph(safe_text(s3.get('account_name')), body_style)],
+        [Paragraph("<b>Source URL:</b>", body_style), Paragraph(safe_text(s3.get('source_url')), body_style)],
+        [Paragraph("<b>Relationship:</b>", body_style), Paragraph(safe_text(s3.get('relationship')), body_style)],
+        [Paragraph("<b>Verification Status:</b>", body_style), Paragraph(safe_text(s3.get('verification_status')), body_style)],
+    ]
+    key_value_table(s3_data, [2.0 * inch, 5.0 * inch])
+    if s3.get('limitations'):
+        story.append(Paragraph("<b>Limitations:</b>", body_style))
+        bullet_list(s3['limitations'])
+
+    # Section 4: Generator Attribution
+    section_heading("Section 4: Generator & Editing Attribution")
+    s4 = report.get("section_4_generator_attribution", {})
+    s4_data = [
+        [Paragraph("<b>Status:</b>", body_style), Paragraph(safe_text(s4.get('status')).upper(), body_style)],
+        [Paragraph("<b>Method:</b>", body_style), Paragraph(safe_text(s4.get('method')), body_style)],
+    ]
+    key_value_table(s4_data, [2.0 * inch, 5.0 * inch])
+    candidates = s4.get('candidates', [])
+    if candidates:
+        story.append(Paragraph("<b>Candidate Families:</b>", body_style))
+        for c in candidates:
+            fam = safe_text(c.get('family'))
+            conf = c.get('confidence', 0)
+            ev_type = safe_text(c.get('evidence_type'))
+            story.append(Paragraph(f"  • {fam}: confidence {conf:.2f} (evidence: {ev_type})", body_style))
+    else:
+        story.append(Paragraph("<i>No candidate families identified</i>", muted_style))
+    if s4.get('limitations'):
+        story.append(Paragraph("<b>Limitations:</b>", body_style))
+        bullet_list(s4['limitations'])
+
+    # Section 5: External Investigation Evidence
+    section_heading("Section 5: External Investigation Evidence")
+    s5 = report.get("section_5_external_evidence", {})
+    s5_data = [
+        [Paragraph("<b>Status:</b>", body_style), Paragraph(safe_text(s5.get('status')).upper(), body_style)],
+        [Paragraph("<b>Source:</b>", body_style), Paragraph(safe_text(s5.get('source')), body_style)],
+        [Paragraph("<b>Retrieval Time (UTC):</b>", body_style), Paragraph(safe_text(s5.get('retrieval_time_utc')), body_style)],
+        [Paragraph("<b>Verification Status:</b>", body_style), Paragraph(safe_text(s5.get('verification_status')), body_style)],
+    ]
+    key_value_table(s5_data, [2.0 * inch, 5.0 * inch])
+    if s5.get('platform_records'):
+        story.append(Paragraph("<b>Platform Records:</b>", body_style))
+        bullet_list([str(r) for r in s5['platform_records']])
+    if s5.get('public_urls'):
+        story.append(Paragraph("<b>Public URLs:</b>", body_style))
+        bullet_list(s5['public_urls'])
+    if s5.get('access_limitations'):
+        story.append(Paragraph("<b>Access Limitations:</b>", body_style))
+        bullet_list(s5['access_limitations'])
+
+    # Section 6: Evidence Preservation & Corroboration
+    section_heading("Section 6: Evidence Preservation & Corroboration")
+    s6 = report.get("section_6_evidence_preservation", {})
+    s6_data = [
+        [Paragraph("<b>Original File Hash:</b>", body_style), Paragraph(f"<font size=7>{safe_text(s6.get('original_file_hash'))}</font>", body_style)],
+        [Paragraph("<b>Scan Identifier:</b>", body_style), Paragraph(safe_text(s6.get('scan_identifier')), body_style)],
+        [Paragraph("<b>Analysis Timestamp (UTC):</b>", body_style), Paragraph(safe_text(s6.get('analysis_timestamp_utc')), body_style)],
+        [Paragraph("<b>Detector Version:</b>", body_style), Paragraph(safe_text(s6.get('detector_version')), body_style)],
+        [Paragraph("<b>Corroboration Status:</b>", body_style), Paragraph(safe_text(s6.get('corroboration_status')).upper(), body_style)],
+    ]
+    key_value_table(s6_data, [2.0 * inch, 5.0 * inch])
+
+    if s6.get('forensic_versions'):
+        story.append(Paragraph("<b>Forensic Module Versions:</b>", body_style))
+        for k, v in s6['forensic_versions'].items():
+            story.append(Paragraph(f"  {safe_text(k)}: {safe_text(v)}", muted_style))
+
+    if s6.get('supporting_observations'):
+        story.append(Paragraph("<b>Supporting Observations:</b>", body_style))
+        bullet_list(s6['supporting_observations'])
+
+    if s6.get('artifact_references'):
+        story.append(Paragraph("<b>Artifact References:</b>", body_style))
+        bullet_list(s6['artifact_references'])
+
+    if s6.get('evidence_relationships'):
+        story.append(Paragraph("<b>Evidence Relationships:</b>", body_style))
+        bullet_list(s6['evidence_relationships'])
+
+    if s6.get('integrity_checks'):
+        story.append(Paragraph("<b>Integrity Checks:</b>", body_style))
+        bullet_list(s6['integrity_checks'])
+
+    if s6.get('outstanding_questions'):
+        story.append(Paragraph("<b>Outstanding Questions:</b>", body_style))
+        bullet_list(s6['outstanding_questions'])
