@@ -49,7 +49,7 @@ def client() -> TestClient:
         status="ok",
         fake_probability=0.08,
         raw_logit=-2.44,
-        threshold_policy="0.80 likely_ai / 0.20 likely_real",
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
         limitations=["Test model limitation"],
         device="cpu",
         duration_seconds=0.12,

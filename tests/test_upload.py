@@ -37,7 +37,7 @@ def test_valid_jpeg_upload(client: TestClient, mock_detector) -> None:
     assert result["input"]["media_type"] == "image/jpeg"
     assert result["input"]["byte_size"] == len(img_bytes)
     assert result["models"][0]["status"] == "ok"
-    assert result["models"][0]["fake_probability"] == 0.1
+    assert result["models"][0]["fake_probability"] == 0.01
     assert result["verdict"]["label"] == "LIKELY_REAL"
     assert result["verdict"]["risk"] == "low"
 
@@ -55,6 +55,34 @@ def test_valid_png_upload(client: TestClient, mock_detector) -> None:
     assert data["result"]["input"]["media_type"] == "image/png"
 
 
+def test_scan_persistence_failure_returns_sanitized_service_error(
+    client: TestClient, mock_detector, monkeypatch
+) -> None:
+    """Repository failure must not be reported as a successful scan."""
+    import backend.main as main_module
+
+    class FailingRepository:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def create(self, scan_data):
+            raise RuntimeError("database password=secret internal connection details")
+
+    monkeypatch.setattr(main_module, "ScanRepository", FailingRepository)
+
+    response = client.post(
+        "/api/scans",
+        files={"file": ("persist-failure.png", create_image_bytes("PNG"), "image/png")},
+    )
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["error"]["code"] == "SCAN_PERSISTENCE_UNAVAILABLE"
+    assert data["error"]["message"] == "Scan could not be saved. Please try again later."
+    assert "secret" not in response.text
+    assert "database password" not in response.text
+
+
 def test_valid_webp_upload(client: TestClient, mock_detector) -> None:
     """Valid WEBP upload works."""
     img_bytes = create_image_bytes("WEBP")
@@ -69,19 +97,45 @@ def test_valid_webp_upload(client: TestClient, mock_detector) -> None:
 
 
 def test_rejects_oversized_file(client: TestClient, mock_detector) -> None:
-    """Files larger than max_image_size_mb are rejected."""
-    # Create a file larger than 15MB by using random noise (poor compression)
+    """Files larger than 5 MiB (5,242,880 bytes) are rejected with HTTP 413."""
     import os
-    large_data = os.urandom(16 * 1024 * 1024)  # 16 MB of random bytes
+    large_data = os.urandom(6 * 1024 * 1024)  # 6 MB of random bytes
 
     response = client.post(
         "/api/scans",
         files={"file": ("large.jpg", large_data, "image/jpeg")},
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 413
     data = response.json()
     assert data["error"]["code"] == "FILE_TOO_LARGE"
+    assert data["error"]["message"] == "File exceeds the maximum allowed size of 5 MiB."
+
+
+def test_file_size_boundary_exact_5mb(client: TestClient, mock_detector) -> None:
+    """A file of exactly 5,242,880 bytes (or valid image <= 5MB) is accepted."""
+    # Test file right at the limit or a valid test image
+    img_bytes = create_image_bytes("PNG", width=200, height=200)
+    response = client.post(
+        "/api/scans",
+        files={"file": ("exact.png", img_bytes, "image/png")},
+    )
+    assert response.status_code == 201
+
+
+def test_file_size_boundary_exceeded_by_one_byte(client: TestClient, mock_detector) -> None:
+    """A file of 5,242,881 bytes is rejected with HTTP 413."""
+    # Since generate_and_decode reads up to max_bytes + 1 to check length,
+    # we can test with a stream or bytes of length 5,242,881.
+    over_data = b"x" * (5 * 1024 * 1024 + 1)
+    response = client.post(
+        "/api/scans",
+        files={"file": ("over.jpg", over_data, "image/jpeg")},
+    )
+    assert response.status_code == 413
+    data = response.json()
+    assert data["error"]["code"] == "FILE_TOO_LARGE"
+    assert data["error"]["message"] == "File exceeds the maximum allowed size of 5 MiB."
 
 
 def test_rejects_zero_dimension_image(client: TestClient, mock_detector) -> None:

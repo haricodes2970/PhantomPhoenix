@@ -52,7 +52,7 @@ def test_likely_real_verdict(client: TestClient, mock_detector) -> None:
 
     assert result["verdict"]["label"] == VerdictLabel.LIKELY_REAL
     assert result["verdict"]["risk"] == RiskLevel.LOW
-    assert any("LIKELY_REAL" in r and "0.10" in r for r in result["verdict"]["rationale"])
+    assert any("LIKELY_REAL" in r and "0.01" in r for r in result["verdict"]["rationale"])
     assert "generator identity" in result["verdict"]["not_claimed"]
     assert "calibrated real-world criminal fraud probability" in result["verdict"]["not_claimed"]
 

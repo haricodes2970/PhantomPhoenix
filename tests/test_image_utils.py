@@ -63,13 +63,13 @@ class TestValidateAndDecode:
         assert exc.value.code == "EMPTY_FILE"
 
     def test_file_too_large_rejected(self) -> None:
-        max_bytes = settings.max_image_size_mb * 1024 * 1024
+        max_bytes = 5 * 1024 * 1024
         data = b"x" * (max_bytes + 1)
         file = io.BytesIO(data)
         with pytest.raises(ImageValidationError) as exc:
             validate_and_decode(file, "large.jpg", "image/jpeg")
         assert exc.value.code == "FILE_TOO_LARGE"
-        assert "15 MiB" in exc.value.message
+        assert "5 MiB" in exc.value.message
 
     def test_invalid_image_rejected(self) -> None:
         file = io.BytesIO(b"not an image")

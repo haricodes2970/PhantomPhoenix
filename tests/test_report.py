@@ -33,12 +33,15 @@ def create_mock_scan() -> Scan:
     scan.model_device = "cuda"
     scan.model_duration_seconds = 0.15
     scan.model_limitations = ["Test limitation"]
-    scan.threshold_policy = "0.80 likely_ai / 0.20 likely_real"
+    scan.threshold_policy = "0.80 likely_ai / 0.05 likely_real"
     scan.verdict_label = "LIKELY_REAL"
     scan.verdict_risk = "low"
     scan.verdict_rationale = ["Primary fake probability 0.05 <= 0.2"]
     scan.verdict_not_claimed = ["generator identity", "legal authenticity", "localized forgery"]
     scan.error = None
+    scan.owner_user_id = (
+        "aaaaaaaa-1111-2222-3333-444444444444"  # matches conftest TEST_USER_ID
+    )
 
     scan.to_scan_result.return_value = {
         "scan_id": str(scan.id),
@@ -60,7 +63,7 @@ def create_mock_scan() -> Scan:
                 "status": "ok",
                 "fake_probability": 0.05,
                 "raw_logit": -2.94,
-                "threshold_policy": "0.80 likely_ai / 0.20 likely_real",
+                "threshold_policy": "0.80 likely_ai / 0.05 likely_real",
                 "limitations": ["Test limitation"],
                 "device": "cuda",
                 "duration_seconds": 0.15,

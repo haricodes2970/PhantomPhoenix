@@ -113,7 +113,7 @@ Or with reload for development:
         "status": "ok|error",
         "fake_probability": 0.0044,
         "raw_logit": -5.42,
-        "threshold_policy": "0.80 likely_ai / 0.20 likely_real",
+        "threshold_policy": "0.80 likely_ai / 0.05 likely_real",
         "limitations": ["Not calibrated on images from this deployment", "..."],
         "device": "cuda|cpu",
         "duration_seconds": 0.19
@@ -189,8 +189,8 @@ Or with reload for development:
 | Fake Probability | Verdict | Risk |
 |---|---|---|
 | `>= 0.80` | `LIKELY_AI` | `high` |
-| `<= 0.20` | `LIKELY_REAL` | `low` |
-| `0.20 - 0.80` | `INCONCLUSIVE` | `moderate` |
+| `<= 0.05` | `LIKELY_REAL` | `low` |
+| `0.05 - 0.80` | `INCONCLUSIVE` | `moderate` |
 | Detector error / no score | `ANALYSIS_FAILED` | `unknown` |
 
 **These are provisional screening thresholds, not calibrated forensic certainty.**  
@@ -355,7 +355,7 @@ Or with reload for development:
         "status": "ok|error",
         "fake_probability": 0.0044,
         "raw_logit": -5.42,
-        "threshold_policy": "0.80 likely_ai / 0.20 likely_real",
+        "threshold_policy": "0.80 likely_ai / 0.05 likely_real",
         "limitations": ["Not calibrated on images from this deployment", "..."],
         "device": "cuda|cpu",
         "duration_seconds": 0.19
@@ -431,8 +431,8 @@ Or with reload for development:
 | Fake Probability | Verdict | Risk |
 |---|---|---|
 | `>= 0.80` | `LIKELY_AI` | `high` |
-| `<= 0.20` | `LIKELY_REAL` | `low` |
-| `0.20 - 0.80` | `INCONCLUSIVE` | `moderate` |
+| `<= 0.05` | `LIKELY_REAL` | `low` |
+| `0.05 - 0.80` | `INCONCLUSIVE` | `moderate` |
 | Detector error / no score | `ANALYSIS_FAILED` | `unknown` |
 
 **These are provisional screening thresholds, not calibrated forensic certainty.**  

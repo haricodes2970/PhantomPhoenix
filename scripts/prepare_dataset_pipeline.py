@@ -252,6 +252,28 @@ def main() -> None:
                 "split": "unassigned",
             })
 
+            # Append incrementally to manifest for robust resumption
+            fieldnames = [
+                "sample_id",
+                "relative_path",
+                "label",
+                "original_dataset",
+                "original_revision",
+                "original_sample_id",
+                "generator_family",
+                "original_format",
+                "sha256",
+                "license_ref",
+                "download_status",
+                "split",
+            ]
+            file_exists = manifest_path.is_file()
+            with manifest_path.open("a", newline="", encoding="utf-8") as mf:
+                writer = csv.DictWriter(mf, fieldnames=fieldnames)
+                if not file_exists or mf.tell() == 0:
+                    writer.writeheader()
+                writer.writerow(manifest_rows[-1])
+
             print(f"[{real_collected + ai_collected}/{args.target_real + args.target_ai}] Saved {label}: {sample_id} ({generator_family})")
 
             if real_collected >= args.target_real and ai_collected >= args.target_ai:

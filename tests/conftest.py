@@ -25,6 +25,35 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+TEST_SIGNING_SECRET = "unit-test-signing-secret-0000000000000000"
+TEST_USER_ID = "aaaaaaaa-1111-2222-3333-444444444444"
+TEST_ADMIN_ID = "aaaaaaaa-1111-2222-3333-444444444445"
+
+
+@pytest.fixture(autouse=True)
+def default_auth(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Enable auth config + default authenticated user for legacy tests.
+
+    Legacy tests run as an ordinary authenticated user via a dependency
+    override of get_current_user (route-level authorization code still runs).
+    Security tests (tests/test_auth_security.py) pop this override to exercise
+    the REAL token validation dependency.
+    """
+    from backend.config import settings
+    from backend.auth import RequestIdentity, get_current_user
+    import backend.rate_limit as rl
+
+    monkeypatch.setattr(settings, "auth_secret", TEST_SIGNING_SECRET)
+
+    # isolate rate limiter state between tests
+    rl.limiter._events.clear()
+
+    identity = RequestIdentity(user_id=TEST_USER_ID, username="test-user", role="user")
+    app.dependency_overrides[get_current_user] = lambda: identity
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
+
 @pytest.fixture
 def mock_db_session() -> AsyncMock:
     """Create a mocked async database session."""
@@ -65,15 +94,15 @@ def mock_detector(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
         "load_error": None,
     }
 
-    # Mock infer - default returns a fake probability of 0.1 (LIKELY_REAL)
+    # Mock infer - default returns a fake probability of 0.01 (LIKELY_REAL with threshold 0.05)
     mock.infer.return_value = ModelOutput(
         model_id="buildborderless/CommunityForensics-DeepfakeDet-ViT",
         model_revision="buildborderless/CommunityForensics-DeepfakeDet-ViT",
         role="primary",
         status="ok",
-        fake_probability=0.1,
-        raw_logit=-2.197,
-        threshold_policy="0.80 likely_ai / 0.20 likely_real",
+        fake_probability=0.01,
+        raw_logit=-4.595,
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
         limitations=["Not calibrated on images from this deployment"],
         device="cpu",
         duration_seconds=0.1,
@@ -109,7 +138,7 @@ def mock_detector_high_score(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
         status="ok",
         fake_probability=0.95,
         raw_logit=2.944,
-        threshold_policy="0.80 likely_ai / 0.20 likely_real",
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
         limitations=["Not calibrated on images from this deployment"],
         device="cpu",
         duration_seconds=0.1,
@@ -143,7 +172,7 @@ def mock_detector_mid_score(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
         status="ok",
         fake_probability=0.5,
         raw_logit=0.0,
-        threshold_policy="0.80 likely_ai / 0.20 likely_real",
+        threshold_policy="0.80 likely_ai / 0.05 likely_real",
         limitations=["Not calibrated on images from this deployment"],
         device="cpu",
         duration_seconds=0.1,
